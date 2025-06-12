@@ -3,8 +3,6 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 
-st.caption("Versión actualizada - Junio 2025")
-
 
 def run(df):
     st.title("Comparativo de Ventas por Mes y Año")
