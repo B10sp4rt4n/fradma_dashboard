@@ -65,8 +65,9 @@ def run(df):
 
     anios_disponibles = sorted(df["año"].dropna().unique())
     if len(anios_disponibles) >= 2:
-        anio_1 = st.selectbox("Selecciona el primer año", anios_disponibles, index=0)
-        anio_2 = st.selectbox("Selecciona el segundo año", anios_disponibles, index=1)
+        anio_1 = st.selectbox("Selecciona el primer año", anios_disponibles)
+        anios_para_comparar = [a for a in anios_disponibles if a != anio_1]
+        anio_2 = st.selectbox("Selecciona el segundo año", anios_para_comparar)
 
         df_y1 = pivot_ventas[pivot_ventas["año"] == anio_1].set_index("mes")["valor_usd"]
         df_y2 = pivot_ventas[pivot_ventas["año"] == anio_2].set_index("mes")["valor_usd"]
