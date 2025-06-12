@@ -75,6 +75,9 @@ def run(df):
             f"{anio_2}": df_y2
         }).fillna(0)
 
+        comparativo[f"{anio_1}"] = pd.to_numeric(comparativo[f"{anio_1}"], errors="coerce").fillna(0)
+        comparativo[f"{anio_2}"] = pd.to_numeric(comparativo[f"{anio_2}"], errors="coerce").fillna(0)
+
         comparativo["Diferencia"] = comparativo[f"{anio_2}"] - comparativo[f"{anio_1}"]
         comparativo["% Variación"] = (
             (comparativo["Diferencia"] / comparativo[f"{anio_1}"].replace(0, pd.NA)) * 100
