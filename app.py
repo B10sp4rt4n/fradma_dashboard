@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 from main import main_kpi, main_comparativo #, main_lineas_producto
@@ -20,7 +21,7 @@ if archivo:
         df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
 
     st.session_state["df"] = df
-
+    st.session_state["archivo_path"] = archivo  # <-- esta línea habilita acceso a otras hojas del Excel
 
 menu = st.sidebar.radio("Navegación", [
     "📈 KPIs Generales",
@@ -43,4 +44,3 @@ elif menu == "📊 Comparativo Año vs Año":
  #            main_lineas_producto.run(st.session_state["df"])
   #  else:
         st.warning("⚠️ Primero sube un archivo para ver el tablero estilo Excel.")
-
