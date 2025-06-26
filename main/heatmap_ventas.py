@@ -41,7 +41,7 @@ def run(df):
 
         mostrar_crecimiento = st.checkbox("📈 Mostrar % de crecimiento vs periodo anterior")
 
-    # ✅ Asegurar siempre la existencia de la columna "periodo" antes del pivot
+    # ✅ Generar columna "periodo"
     growth_lag = None
     if periodo_tipo == "Mensual":
         df['periodo'] = df['mes_anio']
@@ -59,7 +59,14 @@ def run(df):
         df = df[(df['fecha'] >= pd.to_datetime(start_date)) & (df['fecha'] <= pd.to_datetime(end_date))]
         df['periodo'] = "Rango Personalizado"
 
-    # ✅ Crear pivot solo después de tener "periodo"
+    # ✅ Validación: columnas necesarias
+    columnas_necesarias = ['periodo', columna_linea, 'importe']
+    for col in columnas_necesarias:
+        if col is None or col not in df.columns:
+            st.error(f"❌ La columna requerida '{col}' no existe en el DataFrame. No se puede continuar.")
+            st.write(f"Columnas disponibles: {df.columns.tolist()}")
+            return
+
     pivot_table = df.pivot_table(
         index='periodo',
         columns=columna_linea,
