@@ -14,7 +14,7 @@ def run(df):
     df['anio'] = df['fecha'].dt.year
     df['trimestre'] = df['fecha'].dt.to_period('Q').astype(str)
 
-    # ✅ Detección flexible de columna Línea de Negocio / Producto
+    # ✅ Detección flexible de columna Línea
     posibles_columnas_linea = [
         "linea_de_negocio", "linea de negocio",
         "linea_producto", "linea producto", "linea_de_producto",
@@ -31,6 +31,18 @@ def run(df):
         st.write(f"Columnas disponibles: {df.columns.tolist()}")
         return
 
+    # ✅ Detección flexible de columna Importe
+    posibles_columnas_importe = ["importe", "valor_usd", "valor mn", "valor_mn"]
+    columna_importe = next(
+        (col for col in df.columns if unidecode(col.lower().strip()) in [unidecode(x.lower()) for x in posibles_columnas_importe]),
+        None
+    )
+
+    if columna_importe is None:
+        st.error("❌ No se encontró ninguna columna que represente el importe o valor de ventas.")
+        st.write(f"Columnas disponibles: {df.columns.tolist()}")
+        return
+
     with st.sidebar:
         st.header("⚙️ Opciones de análisis")
 
@@ -41,7 +53,7 @@ def run(df):
 
         mostrar_crecimiento = st.checkbox("📈 Mostrar % de crecimiento vs periodo anterior")
 
-    # ✅ Generar columna "periodo"
+    # ✅ Generación de columna "periodo"
     growth_lag = None
     if periodo_tipo == "Mensual":
         df['periodo'] = df['mes_anio']
@@ -59,18 +71,18 @@ def run(df):
         df = df[(df['fecha'] >= pd.to_datetime(start_date)) & (df['fecha'] <= pd.to_datetime(end_date))]
         df['periodo'] = "Rango Personalizado"
 
-    # ✅ Validación: columnas necesarias
-    columnas_necesarias = ['periodo', columna_linea, 'importe']
+    # ✅ Validación previa a pivot
+    columnas_necesarias = ['periodo', columna_linea, columna_importe]
     for col in columnas_necesarias:
         if col is None or col not in df.columns:
-            st.error(f"❌ La columna requerida '{col}' no existe en el DataFrame. No se puede continuar.")
+            st.error(f"❌ La columna requerida '{col}' no existe en el DataFrame.")
             st.write(f"Columnas disponibles: {df.columns.tolist()}")
             return
 
     pivot_table = df.pivot_table(
         index='periodo',
         columns=columna_linea,
-        values='importe',
+        values=columna_importe,
         aggfunc='sum',
         fill_value=0
     )
