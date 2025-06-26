@@ -1,59 +1,59 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 import io
-import numpy as np
+import unicodedata
 from unidecode import unidecode
 
-def run(df):
-    st.title("📊 Heatmap de Ventas por Línea de Negocio / Producto (Fuente: X AGENTE)")
+def clean_columns(columns):
+    return (
+        columns.astype(str)
+        .str.strip()
+        .str.lower()
+        .map(lambda x: unicodedata.normalize('NFKD', x).encode('ascii', errors='ignore').decode('utf-8'))
+    )
+
+def run_heatmap(df):
+    st.title("📊 Heatmap de Ventas por Línea de Negocio / Producto (Fuente: X AGENTE o Contpaq)")
 
     df = df.copy()
     df['mes_anio'] = df['fecha'].dt.strftime('%b-%Y')
     df['anio'] = df['fecha'].dt.year
     df['trimestre'] = df['fecha'].dt.to_period('Q').astype(str)
 
-    # ✅ Detección flexible de columna Línea
+    # Detección flexible de columna Línea
     posibles_columnas_linea = [
         "linea_de_negocio", "linea de negocio",
         "linea_producto", "linea producto", "linea_de_producto",
         "linea prodcucto", "linea_prodcucto", "Línea Prodcucto"
     ]
-
     columna_linea = next(
         (col for col in df.columns if unidecode(col.lower().strip()) in [unidecode(x.lower()) for x in posibles_columnas_linea]),
         None
     )
 
-    if columna_linea is None:
-        st.error("❌ No se encontró ninguna columna que parezca 'Línea de Negocio' o 'Línea Producto'.")
-        st.write(f"Columnas disponibles: {df.columns.tolist()}")
-        return
-
-    # ✅ Detección flexible de columna Importe
+    # Detección flexible de columna Importe
     posibles_columnas_importe = ["importe", "valor_usd", "valor mn", "valor_mn"]
     columna_importe = next(
         (col for col in df.columns if unidecode(col.lower().strip()) in [unidecode(x.lower()) for x in posibles_columnas_importe]),
         None
     )
 
-    if columna_importe is None:
-        st.error("❌ No se encontró ninguna columna que represente el importe o valor de ventas.")
+    if columna_linea is None or columna_importe is None:
+        st.error("❌ No se encontraron las columnas clave necesarias ('línea' e 'importe').")
         st.write(f"Columnas disponibles: {df.columns.tolist()}")
         return
 
     with st.sidebar:
         st.header("⚙️ Opciones de análisis")
-
         periodo_tipo = st.selectbox(
             "🗓️ Tipo de periodo:",
             ["Mensual", "Trimestral", "Anual", "Rango Personalizado"]
         )
-
         mostrar_crecimiento = st.checkbox("📈 Mostrar % de crecimiento vs periodo anterior")
 
-    # ✅ Generación de columna "periodo"
     growth_lag = None
     if periodo_tipo == "Mensual":
         df['periodo'] = df['mes_anio']
@@ -70,14 +70,6 @@ def run(df):
             end_date = st.date_input("📅 Fecha fin:", value=df['fecha'].max())
         df = df[(df['fecha'] >= pd.to_datetime(start_date)) & (df['fecha'] <= pd.to_datetime(end_date))]
         df['periodo'] = "Rango Personalizado"
-
-    # ✅ Validación previa a pivot
-    columnas_necesarias = ['periodo', columna_linea, columna_importe]
-    for col in columnas_necesarias:
-        if col is None or col not in df.columns:
-            st.error(f"❌ La columna requerida '{col}' no existe en el DataFrame.")
-            st.write(f"Columnas disponibles: {df.columns.tolist()}")
-            return
 
     pivot_table = df.pivot_table(
         index='periodo',
@@ -147,10 +139,9 @@ def run(df):
                         growth = growth_table.loc[row, col] if growth_table is not None else np.nan
                         if pd.notna(val):
                             if pd.notna(growth):
-                                annot_data.loc[row, col] = f"{val:,.0f}\n({growth:.1f}%)"
+                                annot_data.loc[row, col] = f"{val:,.0f}\\n({growth:.1f}%)"
                             else:
                                 annot_data.loc[row, col] = f"{val:,.0f}"
-
             except Exception as e:
                 st.warning(f"⚠️ Error calculando crecimiento: {e}")
                 annot_data = df_filtered.applymap(lambda x: f"{x:,.0f}")
@@ -187,3 +178,39 @@ def run(df):
             file_name="heatmap_filtrado.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+# --- Bloque principal para cargar archivo genérico ---
+
+uploaded_file = st.file_uploader("📂 Sube el archivo Excel (X AGENTE o Hoja1 tipo Contpaq):", type=["xlsx"])
+
+if uploaded_file is not None:
+    try:
+        df = pd.read_excel(uploaded_file, sheet_name="X AGENTE")
+        df.columns = clean_columns(df.columns)
+    except:
+        try:
+            df_temp = pd.read_excel(uploaded_file, sheet_name="Hoja1", skiprows=3)
+            df_temp.columns = clean_columns(df_temp.columns)
+
+            col_linea = next(
+                (col for col in df_temp.columns if 'linea' in col and any(x in col for x in ['negocio', 'producto', 'prodcucto'])),
+                None
+            )
+            col_importe = next(
+                (col for col in df_temp.columns if any(x in col for x in ['importe', 'valorusd', 'valor usd', 'usd'])),
+                None
+            )
+
+            if all(['fecha' in df_temp.columns, col_linea, col_importe]):
+                df = df_temp[['fecha', col_linea, col_importe]].copy()
+                df.columns = ['fecha', 'linea de negocio', 'importe']
+            else:
+                st.error("❌ No se encontraron columnas clave suficientes en Hoja1 tipo Contpaq.")
+                st.stop()
+        except Exception as e:
+            st.error(f"❌ Error leyendo el archivo: {e}")
+            st.stop()
+
+    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+    df = df.dropna(subset=['fecha'])
+    run_heatmap(df)
