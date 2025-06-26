@@ -17,12 +17,12 @@ def run(df):
     posibles_columnas_linea = [
         "linea_de_negocio", "linea de negocio",
         "linea_producto", "línea producto", "linea producto",
-        "linea_de_producto", "línea prodcucto","Línea Prodcucto"
+        "linea_de_producto", "línea prodcucto","Línea Prodcucto"  
     ]
 
     columna_linea = next((col for col in df.columns if col.lower().strip() in posibles_columnas_linea), None)
 
-    if columna_linea is None:
+    if columna_linea is None:  
         st.error("❌ No se encontró ninguna columna que parezca 'Línea de Negocio' o 'Línea Producto'.")
         st.write(f"Columnas disponibles: {df.columns.tolist()}")
         return
