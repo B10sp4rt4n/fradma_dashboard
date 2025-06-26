@@ -6,19 +6,24 @@ import io
 import numpy as np
 
 def run(df):
-    st.title("📊 Heatmap de Ventas por Línea de Negocio (Fuente: X AGENTE)")
+    st.title("📊 Heatmap de Ventas por Línea de Negocio / Producto (Fuente: X AGENTE)")
 
     df = df.copy()
     df['mes_anio'] = df['fecha'].dt.strftime('%b-%Y')
     df['anio'] = df['fecha'].dt.year
     df['trimestre'] = df['fecha'].dt.to_period('Q').astype(str)
 
-    # ✅ Detectar nombre real de la columna de línea de negocio
-    posibles_columnas_linea = ["linea_de_negocio", "linea de negocio", "linea_negocio"]
-    columna_linea = next((col for col in df.columns if col in posibles_columnas_linea), None)
+    # ✅ Detección flexible de columna
+    posibles_columnas_linea = [
+        "linea_de_negocio", "linea de negocio",
+        "linea_producto", "línea producto", "linea producto",
+        "linea_de_producto", "línea prodcucto"
+    ]
+
+    columna_linea = next((col for col in df.columns if col.lower().strip() in posibles_columnas_linea), None)
 
     if columna_linea is None:
-        st.error("❌ No se encontró ninguna columna que parezca 'Línea de Negocio' en el DataFrame.")
+        st.error("❌ No se encontró ninguna columna que parezca 'Línea de Negocio' o 'Línea Producto'.")
         st.write(f"Columnas disponibles: {df.columns.tolist()}")
         return
 
@@ -96,7 +101,6 @@ def run(df):
         top_lineas = total_por_linea.sort_values(ascending=False).head(top_n).index.tolist()
         df_filtered = df_filtered[top_lineas]
 
-        # Calcular crecimiento
         annot_data = df_filtered.copy().astype(str)
         if mostrar_crecimiento and growth_lag:
             df_growth = df_filtered.copy()
@@ -128,7 +132,6 @@ def run(df):
         else:
             annot_data = df_filtered.applymap(lambda x: f"{x:,.0f}")
 
-        # Plot Heatmap
         fig, ax = plt.subplots(figsize=(max(10, len(top_lineas)*1.5), max(5, len(selected_periodos)*0.6)))
         sns.heatmap(
             df_filtered,
@@ -148,7 +151,6 @@ def run(df):
         plt.tight_layout()
         st.pyplot(fig)
 
-        # Exportación
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             df_filtered.to_excel(writer, sheet_name='Heatmap_Filtrado')
