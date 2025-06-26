@@ -17,7 +17,7 @@ def run(df):
     posibles_columnas_linea = [
         "linea_de_negocio", "linea de negocio",
         "linea_producto", "línea producto", "linea producto",
-        "linea_de_producto", "línea prodcucto"
+        "linea_de_producto", "línea prodcucto","Línea Prodcucto"
     ]
 
     columna_linea = next((col for col in df.columns if col.lower().strip() in posibles_columnas_linea), None)
