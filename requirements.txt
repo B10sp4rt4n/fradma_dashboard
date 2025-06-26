@@ -1,6 +1,8 @@
 streamlit
 pandas
-plotly
 numpy
-altair
+matplotlib
+seaborn
+xlsxwriter
 openpyxl
+unidecode
