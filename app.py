@@ -128,6 +128,6 @@ elif menu == "📊 Comparativo Año vs Año":
 
 elif menu == "🔥 Heatmap Ventas":
     if "df" in st.session_state:
-        heatmap_ventas.run(st.session_state["df"])
+        heatmap_ventas.run(st.session_state["df"]) 
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el Heatmap.")

@@ -161,4 +161,4 @@ def run(df):
             data=buffer.getvalue(),
             file_name="heatmap_filtrado.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        ) 
