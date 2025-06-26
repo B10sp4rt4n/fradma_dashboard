@@ -4,6 +4,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import io
 import numpy as np
+from unidecode import unidecode
 
 def run(df):
     st.title("📊 Heatmap de Ventas por Línea de Negocio / Producto (Fuente: X AGENTE)")
@@ -13,16 +14,19 @@ def run(df):
     df['anio'] = df['fecha'].dt.year
     df['trimestre'] = df['fecha'].dt.to_period('Q').astype(str)
 
-    # ✅ Detección flexible de columna
+    # ✅ Detección flexible con unidecode
     posibles_columnas_linea = [
         "linea_de_negocio", "linea de negocio",
-        "linea_producto", "línea producto", "linea producto",
-        "linea_de_producto", "línea prodcucto","Línea Prodcucto"  
+        "linea_producto", "linea producto", "linea_de_producto",
+        "linea prodcucto", "linea_prodcucto", "Línea Prodcucto"
     ]
 
-    columna_linea = next((col for col in df.columns if col.lower().strip() in posibles_columnas_linea), None)
+    columna_linea = next(
+        (col for col in df.columns if unidecode(col.lower().strip()) in [unidecode(x.lower()) for x in posibles_columnas_linea]),
+        None
+    )
 
-    if columna_linea is None:  
+    if columna_linea is None:
         st.error("❌ No se encontró ninguna columna que parezca 'Línea de Negocio' o 'Línea Producto'.")
         st.write(f"Columnas disponibles: {df.columns.tolist()}")
         return
@@ -161,4 +165,4 @@ def run(df):
             data=buffer.getvalue(),
             file_name="heatmap_filtrado.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        ) 
+        )
