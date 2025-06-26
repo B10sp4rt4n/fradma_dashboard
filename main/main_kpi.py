@@ -51,18 +51,35 @@ def run():
     col2.metric("Total Ventas MN", f"${total_mn:,.0f}")
     col3.metric("Operaciones", f"{total_operaciones:,}")
 
-    # Filtros opcionales
-    st.subheader("Filtros por Agente")
-    agentes = df["agente"].dropna().unique() if "agente" in df.columns else []
-    linea_producto = df["linea_producto"].dropna().unique() if "linea_producto" in df.columns else []
+    # Reemplazado por bloque dinámico
 
-    agente_sel = st.selectbox("Selecciona Agente (opcional):", ["Todos"] + list(agentes)) if len(agentes) > 0 else "Todos"
+    # === Filtros opcionales ===
+    st.subheader("Filtros por Ejecutivo")
+
+    # Buscar dinámicamente si la columna se llama 'agente', 'vendedor' o 'ejecutivo'
+    columna_agente = None
+    for col in df.columns:
+        if col.lower() in ["agente", "vendedor", "ejecutivo"]:
+            columna_agente = col
+            break
+
+    if columna_agente:
+        df["agente"] = df[columna_agente].astype(str)  # Estandarizar
+        agentes = sorted(df["agente"].dropna().unique())
+        agente_sel = st.selectbox("Selecciona Ejecutivo:", ["Todos"] + agentes)
+
+        if agente_sel != "Todos":
+            df = df[df["agente"] == agente_sel]
+    else:
+        st.warning("⚠️ No se encontró columna 'agente', 'vendedor' o 'ejecutivo'.")
+
+    # Filtro adicional: línea de producto
+    linea_producto = df["linea_producto"].dropna().unique() if "linea_producto" in df.columns else []
     linea_sel = st.selectbox("Selecciona Línea de Producto (opcional):", ["Todas"] + list(linea_producto)) if len(linea_producto) > 0 else "Todas"
 
-    if agente_sel != "Todos" and "agente" in df.columns:
-        df = df[df["agente"] == agente_sel]
     if linea_sel != "Todas" and "linea_producto" in df.columns:
         df = df[df["linea_producto"] == linea_sel]
+
 
     # KPIs filtrados
     st.subheader("KPIs Filtrados")
@@ -173,6 +190,73 @@ def run():
             # Normalizar columnas
             vigentes_df.columns = vigentes_df.columns.str.lower().str.strip().str.replace(" ", "_")
             vencidas_df.columns = vencidas_df.columns.str.lower().str.strip().str.replace(" ", "_")
+
+            # KPIs de vencimiento calculados por días reales desde columna 'vencimiento'
+            if "vencimiento" in vencidas_df.columns and "vendedor" in vencidas_df.columns:
+                st.subheader("⏱️ Indicadores por Vencimiento Real (calculado desde fecha de vencimiento)")
+
+                vencidas_df = vencidas_df.copy()
+                vencidas_df["vencimiento"] = pd.to_datetime(vencidas_df["vencimiento"], errors="coerce")
+                vencidas_df["dias_vencidos"] = (pd.Timestamp.today() - vencidas_df["vencimiento"]).dt.days
+
+                def clasificar_dias(d):
+                    if pd.isna(d):
+                        return "sin fecha"
+                    elif d <= 30:
+                        return "1-30 días"
+                    elif d <= 60:
+                        return "31-60 días"
+                    else:
+                        return "60+ días"
+
+                vencidas_df["rango_vencimiento"] = vencidas_df["dias_vencidos"].apply(clasificar_dias)
+
+                # Detección de columna de monto
+                posibles_montos = ["ventas_usd_con_iva", "ventas usd con iva", "valor_usd", "saldo_usd"]
+                columna_monto = next((col for col in vencidas_df.columns if col.lower() in posibles_montos), None)
+
+                if columna_monto is None:
+                    st.error("❌ No se encontró columna de monto en USD.")
+                else:
+                    vencidas_df["ventas_usd_con_iva"] = pd.to_numeric(vencidas_df[columna_monto], errors="coerce").fillna(0)
+
+                    resumen = vencidas_df.groupby(["vendedor", "rango_vencimiento"]).agg(
+                        cuentas=("ventas_usd_con_iva", "count"),
+                        monto_usd=("ventas_usd_con_iva", "sum")
+                    ).reset_index()
+
+                    tabla = resumen.pivot(index="vendedor", columns="rango_vencimiento", values=["cuentas", "monto_usd"])
+                    tabla.columns = [f"{a} {b}" for a, b in tabla.columns]
+                    tabla = tabla.fillna(0).reset_index()
+
+                    # Agregar fila de totales a la tabla
+                    fila_total = tabla.select_dtypes(include='number').sum().to_frame().T
+                    fila_total.insert(0, "vendedor", "TOTAL")
+                    tabla_con_totales = pd.concat([tabla, fila_total], ignore_index=True)
+                    st.dataframe(tabla_con_totales.style.format({
+                        col: "${:,.0f}" if "monto" in col else "{:,.0f}" for col in tabla_con_totales.columns if col != "vendedor"
+                    }))
+
+                    st.subheader("📊 Totales Generales por Rango")
+                    total_por_rango = vencidas_df.groupby("rango_vencimiento").agg(
+                        cuentas=("ventas_usd_con_iva", "count"),
+                        monto_usd=("ventas_usd_con_iva", "sum")
+                    ).reset_index()
+
+                    c1, c2, c3 = st.columns(3)
+
+                    def mostrar_metric(col, rango):
+                        fila = total_por_rango[total_por_rango["rango_vencimiento"] == rango]
+                        if not fila.empty:
+                            monto = fila["monto_usd"].values[0]
+                            cuentas = fila["cuentas"].values[0]
+                            col.metric(rango, f"${monto:,.0f}", f"{int(cuentas)} cuentas")
+                        else:
+                            col.metric(rango, "$0", "0 cuentas")
+
+                    mostrar_metric(c1, "1-30 días")
+                    mostrar_metric(c2, "31-60 días")
+                    mostrar_metric(c3, "60+ días")
 
             vigente_totals = vigentes_df.groupby("vendedor")["ventas_usd_con_iva"].sum().reset_index()
             vigente_totals["Tipo"] = "Vigente"

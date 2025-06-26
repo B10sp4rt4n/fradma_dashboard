@@ -4,7 +4,7 @@ import pandas as pd
 import altair as alt
 
 
-def run(df):
+def run(df, año_base=None):
     st.title("Comparativo de Ventas por Mes y Año")
 
     df.columns = df.columns.str.lower().str.strip()
@@ -22,9 +22,7 @@ def run(df):
         st.error("No se encontró la columna 'valor_usd', 'valor usd', 'ventas_usd' ni 'importe'.")
         return
 
-    if "anio" in df.columns:
-        df = df.rename(columns={"anio": "año"})
-    if "aã±o" in df.columns:
+    
         df = df.rename(columns={"aã±o": "año"})
 
     if "fecha" in df.columns and ("año" not in df.columns or "mes" not in df.columns):
@@ -65,8 +63,11 @@ def run(df):
 
     anios_disponibles = sorted(df["año"].dropna().unique())
     if len(anios_disponibles) >= 2:
-        anio_1 = st.selectbox("Selecciona el primer año", anios_disponibles, index=0)
-        anio_2 = st.selectbox("Selecciona el segundo año", anios_disponibles, index=1)
+        default_index_1 = anios_disponibles.index(año_base) if año_base in anios_disponibles else 0
+        default_index_2 = default_index_1 + 1 if default_index_1 + 1 < len(anios_disponibles) else 0
+
+        anio_1 = st.selectbox("Selecciona el primer año", anios_disponibles, index=default_index_1)
+        anio_2 = st.selectbox("Selecciona el segundo año", anios_disponibles, index=default_index_2)
 
         df_y1 = pivot_ventas[pivot_ventas["año"] == anio_1].set_index("mes")["valor_usd"]
         df_y2 = pivot_ventas[pivot_ventas["año"] == anio_2].set_index("mes")["valor_usd"]
