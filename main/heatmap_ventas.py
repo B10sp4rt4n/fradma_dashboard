@@ -14,7 +14,7 @@ def run(df):
     df['anio'] = df['fecha'].dt.year
     df['trimestre'] = df['fecha'].dt.to_period('Q').astype(str)
 
-    # ✅ Detección flexible con unidecode
+    # ✅ Detección flexible de columna Línea de Negocio / Producto
     posibles_columnas_linea = [
         "linea_de_negocio", "linea de negocio",
         "linea_producto", "linea producto", "linea_de_producto",
@@ -41,6 +41,8 @@ def run(df):
 
         mostrar_crecimiento = st.checkbox("📈 Mostrar % de crecimiento vs periodo anterior")
 
+    # ✅ Asegurar siempre la existencia de la columna "periodo" antes del pivot
+    growth_lag = None
     if periodo_tipo == "Mensual":
         df['periodo'] = df['mes_anio']
         growth_lag = 12
@@ -56,8 +58,8 @@ def run(df):
             end_date = st.date_input("📅 Fecha fin:", value=df['fecha'].max())
         df = df[(df['fecha'] >= pd.to_datetime(start_date)) & (df['fecha'] <= pd.to_datetime(end_date))]
         df['periodo'] = "Rango Personalizado"
-        growth_lag = None
 
+    # ✅ Crear pivot solo después de tener "periodo"
     pivot_table = df.pivot_table(
         index='periodo',
         columns=columna_linea,
