@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -94,12 +93,31 @@ def run(df):
     if selected_lineas and selected_periodos:
         df_filtered = pivot_table.loc[selected_periodos, selected_lineas]
 
+        # Crear period_id para orden cronológico real
+        try:
+            period_id_map = {}
+            if periodo_tipo == "Mensual":
+                period_dates = pd.to_datetime(df_filtered.index, format='%b-%Y', errors='coerce')
+                sorted_periods = period_dates.sort_values().reset_index(drop=True)
+                period_id_map = {date.strftime('%b-%Y'): idx for idx, date in enumerate(sorted_periods, start=1)}
+            elif periodo_tipo == "Trimestral":
+                sorted_periods = pd.PeriodIndex(df_filtered.index, freq='Q').sort_values().reset_index(drop=True)
+                period_id_map = {str(period): idx for idx, period in enumerate(sorted_periods, start=1)}
+            elif periodo_tipo == "Anual":
+                period_dates = pd.to_datetime(df_filtered.index, format='%Y', errors='coerce')
+                sorted_periods = period_dates.sort_values().reset_index(drop=True)
+                period_id_map = {str(date.year): idx for idx, date in enumerate(sorted_periods, start=1)}
+
+            df_filtered['period_id'] = [period_id_map.get(idx) for idx in df_filtered.index]
+        except Exception as e:
+            st.warning(f"⚠️ Error creando period_id: {e}")
+
         with st.sidebar:
             min_importe, max_importe = st.slider(
                 "💰 Filtro por importe ($):",
-                min_value=float(df_filtered.min().min()),
-                max_value=float(df_filtered.max().max()),
-                value=(float(df_filtered.min().min()), float(df_filtered.max().max()))
+                min_value=float(df_filtered.drop(columns='period_id').min().min()),
+                max_value=float(df_filtered.drop(columns='period_id').max().max()),
+                value=(float(df_filtered.drop(columns='period_id').min().min()), float(df_filtered.drop(columns='period_id').max().max()))
             )
 
             top_n = st.number_input(
@@ -111,6 +129,9 @@ def run(df):
             )
 
         df_filtered = df_filtered.applymap(lambda x: x if min_importe <= x <= max_importe else np.nan)
+        if 'period_id' in df_filtered.columns:
+            period_ids = df_filtered['period_id']
+            df_filtered = df_filtered.drop(columns='period_id')
         total_por_linea = df_filtered.sum(axis=0)
         top_lineas = total_por_linea.sort_values(ascending=False).head(top_n).index.tolist()
         df_filtered = df_filtered[top_lineas]
@@ -119,8 +140,8 @@ def run(df):
         nuevas_lineas = set()
 
         if mostrar_crecimiento and growth_lag:
-            df_growth = df_filtered.copy()
             try:
+                df_growth = df_filtered.copy()
                 if periodo_tipo == "Mensual":
                     df_growth.index = pd.to_datetime(df_growth.index, format='%b-%Y', errors='coerce')
                 elif periodo_tipo == "Trimestral":
@@ -128,9 +149,10 @@ def run(df):
                 elif periodo_tipo == "Anual":
                     df_growth.index = pd.to_datetime(df_growth.index, format='%Y', errors='coerce')
 
-                df_growth = df_growth.sort_index()
+                df_growth['period_id'] = period_ids
+                df_growth = df_growth.sort_values('period_id').drop(columns='period_id')
                 growth_table = df_growth.pct_change(periods=growth_lag) * 100
-                growth_table.index = df_filtered.index
+                growth_table = growth_table.loc[df_filtered.index]
 
                 nuevas_ventas = np.sum(np.isinf(growth_table.values))
                 st.sidebar.markdown("### 🔔 Detección de Nuevas Ventas")
@@ -163,23 +185,6 @@ def run(df):
         else:
             annot_data = df_filtered.applymap(lambda x: f"{x:,.0f}")
 
-        # Ordenar periodos cronológicamente antes de graficar
-        try:
-            if periodo_tipo == "Mensual":
-                df_filtered.index = pd.to_datetime(df_filtered.index, format='%b-%Y', errors='coerce')
-                df_filtered = df_filtered.sort_index()
-                df_filtered.index = df_filtered.index.strftime('%b-%Y')
-            elif periodo_tipo == "Trimestral":
-                df_filtered.index = pd.PeriodIndex(df_filtered.index, freq='Q')
-                df_filtered = df_filtered.sort_index()
-                df_filtered.index = df_filtered.index.astype(str)
-            elif periodo_tipo == "Anual":
-                df_filtered.index = pd.to_datetime(df_filtered.index, format='%Y', errors='coerce')
-                df_filtered = df_filtered.sort_index()
-                df_filtered.index = df_filtered.index.dt.year.astype(str)
-        except Exception as e:
-            st.warning(f"⚠️ Error ordenando cronológicamente los periodos: {e}")
-
         fig, ax = plt.subplots(figsize=(max(10, len(top_lineas)*1.5), max(5, len(selected_periodos)*0.6)))
         sns.heatmap(
             df_filtered,
@@ -192,7 +197,6 @@ def run(df):
             ax=ax
         )
 
-        # Pintar anotaciones manuales
         for i in range(len(df_filtered.index)):
             for j in range(len(df_filtered.columns)):
                 text = annot_data.iloc[i, j]
