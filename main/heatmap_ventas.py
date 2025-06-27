@@ -7,7 +7,7 @@ import io
 import unicodedata
 
 def run(df):
-    st.title("📊 Heatmap de Ventas (Entrada Genérica)")
+    st.title("📊 Heatmap de Ventas (Entrada Genérica)")  
 
     def clean_columns(columns):
         return (
