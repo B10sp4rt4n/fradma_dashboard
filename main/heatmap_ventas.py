@@ -50,6 +50,24 @@ def run(df):
         )
         mostrar_crecimiento = st.checkbox("📈 Mostrar % de crecimiento vs periodo anterior")
 
+    # ✅ Crear identificador secuencial absoluto (period_id) ANTES del pivot_table
+    try:
+        if periodo_tipo == "Mensual":
+            df['period_order'] = pd.to_datetime(df['fecha']).dt.to_period('M')
+        elif periodo_tipo == "Trimestral":
+            df['period_order'] = pd.to_datetime(df['fecha']).dt.to_period('Q')
+        elif periodo_tipo == "Anual":
+            df['period_order'] = pd.to_datetime(df['fecha']).dt.to_period('Y')
+        else:
+            df['period_order'] = 'Custom'
+
+        unique_periods = sorted(df['period_order'].unique())
+        period_id_map = {str(period): idx for idx, period in enumerate(unique_periods, start=1)}
+        df['period_id'] = df['period_order'].astype(str).map(period_id_map)
+    except Exception as e:
+        st.warning(f"⚠️ Error creando period_id absoluto: {e}")
+
+    # Asignar el campo 'periodo' visible según el tipo
     if periodo_tipo == "Mensual":
         df['periodo'] = df['mes_anio']
         growth_lag = 12
@@ -75,6 +93,10 @@ def run(df):
         fill_value=0
     )
 
+    # Recuperar period_id para cada periodo después del pivot
+    period_id_series = df.drop_duplicates('periodo').set_index('periodo')['period_id']
+    df_period_ids = period_id_series.reindex(pivot_table.index)
+
     lineas_disponibles = list(pivot_table.columns)
     periodos_disponibles = list(pivot_table.index)
 
@@ -93,31 +115,12 @@ def run(df):
     if selected_lineas and selected_periodos:
         df_filtered = pivot_table.loc[selected_periodos, selected_lineas]
 
-        # Crear period_id para orden cronológico real
-        try:
-            period_id_map = {}
-            if periodo_tipo == "Mensual":
-                period_dates = pd.to_datetime(df_filtered.index, format='%b-%Y', errors='coerce')
-                sorted_periods = period_dates.sort_values().reset_index(drop=True)
-                period_id_map = {date.strftime('%b-%Y'): idx for idx, date in enumerate(sorted_periods, start=1)}
-            elif periodo_tipo == "Trimestral":
-                sorted_periods = pd.PeriodIndex(df_filtered.index, freq='Q').sort_values().reset_index(drop=True)
-                period_id_map = {str(period): idx for idx, period in enumerate(sorted_periods, start=1)}
-            elif periodo_tipo == "Anual":
-                period_dates = pd.to_datetime(df_filtered.index, format='%Y', errors='coerce')
-                sorted_periods = period_dates.sort_values().reset_index(drop=True)
-                period_id_map = {str(date.year): idx for idx, date in enumerate(sorted_periods, start=1)}
-
-            df_filtered['period_id'] = [period_id_map.get(idx) for idx in df_filtered.index]
-        except Exception as e:
-            st.warning(f"⚠️ Error creando period_id: {e}")
-
         with st.sidebar:
             min_importe, max_importe = st.slider(
                 "💰 Filtro por importe ($):",
-                min_value=float(df_filtered.drop(columns='period_id').min().min()),
-                max_value=float(df_filtered.drop(columns='period_id').max().max()),
-                value=(float(df_filtered.drop(columns='period_id').min().min()), float(df_filtered.drop(columns='period_id').max().max()))
+                min_value=float(df_filtered.min().min()),
+                max_value=float(df_filtered.max().max()),
+                value=(float(df_filtered.min().min()), float(df_filtered.max().max()))
             )
 
             top_n = st.number_input(
@@ -129,9 +132,6 @@ def run(df):
             )
 
         df_filtered = df_filtered.applymap(lambda x: x if min_importe <= x <= max_importe else np.nan)
-        if 'period_id' in df_filtered.columns:
-            period_ids = df_filtered['period_id']
-            df_filtered = df_filtered.drop(columns='period_id')
         total_por_linea = df_filtered.sum(axis=0)
         top_lineas = total_por_linea.sort_values(ascending=False).head(top_n).index.tolist()
         df_filtered = df_filtered[top_lineas]
@@ -142,6 +142,12 @@ def run(df):
         if mostrar_crecimiento and growth_lag:
             try:
                 df_growth = df_filtered.copy()
+
+                # ✅ Ordenar df_growth internamente por el verdadero period_id antes de pct_change
+                if periodo_tipo != "Rango Personalizado" and df_period_ids is not None:
+                    df_growth['period_id'] = df_period_ids.loc[df_filtered.index]
+                    df_growth = df_growth.sort_values('period_id').drop(columns='period_id')
+
                 if periodo_tipo == "Mensual":
                     df_growth.index = pd.to_datetime(df_growth.index, format='%b-%Y', errors='coerce')
                 elif periodo_tipo == "Trimestral":
@@ -149,8 +155,6 @@ def run(df):
                 elif periodo_tipo == "Anual":
                     df_growth.index = pd.to_datetime(df_growth.index, format='%Y', errors='coerce')
 
-                df_growth['period_id'] = period_ids
-                df_growth = df_growth.sort_values('period_id').drop(columns='period_id')
                 growth_table = df_growth.pct_change(periods=growth_lag) * 100
                 growth_table = growth_table.loc[df_filtered.index]
 
