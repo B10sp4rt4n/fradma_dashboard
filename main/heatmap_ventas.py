@@ -50,7 +50,7 @@ def run(df):
         )
         mostrar_crecimiento = st.checkbox("📈 Mostrar % de crecimiento vs periodo anterior")
 
-    # ✅ Crear identificador secuencial absoluto (period_id) ANTES del pivot_table
+    # ✅✅✅ NUEVO BLOQUE: Crear period_id absoluto basado en TODA la historia del df (no solo periodos filtrados)
     try:
         if periodo_tipo == "Mensual":
             df['period_order'] = pd.to_datetime(df['fecha']).dt.to_period('M')
@@ -61,13 +61,13 @@ def run(df):
         else:
             df['period_order'] = 'Custom'
 
-        unique_periods = sorted(df['period_order'].unique())
+        unique_periods = sorted(df['period_order'].dropna().unique())
         period_id_map = {str(period): idx for idx, period in enumerate(unique_periods, start=1)}
         df['period_id'] = df['period_order'].astype(str).map(period_id_map)
     except Exception as e:
         st.warning(f"⚠️ Error creando period_id absoluto: {e}")
 
-    # Asignar el campo 'periodo' visible según el tipo
+    # Asignar campo de 'periodo' visible
     if periodo_tipo == "Mensual":
         df['periodo'] = df['mes_anio']
         growth_lag = 12
@@ -85,6 +85,7 @@ def run(df):
         df['periodo'] = "Rango Personalizado"
         growth_lag = None
 
+    # Generar pivot_table
     pivot_table = df.pivot_table(
         index='periodo',
         columns=columna_linea,
@@ -93,9 +94,9 @@ def run(df):
         fill_value=0
     )
 
-    # Recuperar period_id para cada periodo después del pivot
-    period_id_series = df.drop_duplicates('periodo').set_index('periodo')['period_id']
-    df_period_ids = period_id_series.reindex(pivot_table.index)
+    # ✅ Crear mapping de period_id por periodo visible
+    period_id_lookup = df.drop_duplicates('periodo').set_index('periodo')['period_id']
+    df_period_ids = period_id_lookup.reindex(pivot_table.index)
 
     lineas_disponibles = list(pivot_table.columns)
     periodos_disponibles = list(pivot_table.index)
@@ -143,7 +144,7 @@ def run(df):
             try:
                 df_growth = df_filtered.copy()
 
-                # ✅ Ordenar df_growth internamente por el verdadero period_id antes de pct_change
+                # ✅✅✅ Reordenar internamente por period_id antes de calcular crecimiento
                 if periodo_tipo != "Rango Personalizado" and df_period_ids is not None:
                     df_growth['period_id'] = df_period_ids.loc[df_filtered.index]
                     df_growth = df_growth.sort_values('period_id').drop(columns='period_id')
