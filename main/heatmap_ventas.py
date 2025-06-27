@@ -163,6 +163,23 @@ def run(df):
         else:
             annot_data = df_filtered.applymap(lambda x: f"{x:,.0f}")
 
+        # Ordenar periodos cronológicamente antes de graficar
+        try:
+            if periodo_tipo == "Mensual":
+                df_filtered.index = pd.to_datetime(df_filtered.index, format='%b-%Y', errors='coerce')
+                df_filtered = df_filtered.sort_index()
+                df_filtered.index = df_filtered.index.strftime('%b-%Y')
+            elif periodo_tipo == "Trimestral":
+                df_filtered.index = pd.PeriodIndex(df_filtered.index, freq='Q')
+                df_filtered = df_filtered.sort_index()
+                df_filtered.index = df_filtered.index.astype(str)
+            elif periodo_tipo == "Anual":
+                df_filtered.index = pd.to_datetime(df_filtered.index, format='%Y', errors='coerce')
+                df_filtered = df_filtered.sort_index()
+                df_filtered.index = df_filtered.index.dt.year.astype(str)
+        except Exception as e:
+            st.warning(f"⚠️ Error ordenando cronológicamente los periodos: {e}")
+
         fig, ax = plt.subplots(figsize=(max(10, len(top_lineas)*1.5), max(5, len(selected_periodos)*0.6)))
         sns.heatmap(
             df_filtered,
