@@ -17,10 +17,32 @@ def run(df):
             .map(lambda x: unicodedata.normalize('NFKD', x).encode('ascii', errors='ignore').decode('utf-8'))
         )
 
+    def detectar_columna(df, posibles_nombres):
+        for posible in posibles_nombres:
+            for col in df.columns:
+                if unicodedata.normalize('NFKD', col.lower().strip()).encode('ascii', errors='ignore').decode('utf-8') == unicodedata.normalize('NFKD', posible.lower().strip()).encode('ascii', errors='ignore').decode('utf-8'):
+                    return col
+        return None
+
+    # Mapeo robusto de nombres de columnas
+    mapa_columnas = {
+        "linea": ["linea_prodcucto", "linea_producto", "linea_de_negocio", "linea producto", "linea_de_producto"],
+        "importe": ["valor_mn", "importe", "valor_usd", "valor mn"]
+    }
+
     df.columns = clean_columns(df.columns)
     df['mes_anio'] = df['fecha'].dt.strftime('%b-%Y')
     df['anio'] = df['fecha'].dt.year
     df['trimestre'] = df['fecha'].dt.to_period('Q').astype(str)
+
+    # Detectar columna de línea e importe
+    columna_linea = detectar_columna(df, mapa_columnas["linea"])
+    columna_importe = detectar_columna(df, mapa_columnas["importe"])
+
+    if columna_linea is None or columna_importe is None:
+        st.error("❌ No se encontraron las columnas clave necesarias para 'línea' e 'importe'.")
+        st.write(f"Columnas detectadas en tu archivo: {df.columns.tolist()}")
+        return
 
     with st.sidebar:
         st.header("⚙️ Opciones de análisis")
@@ -46,14 +68,6 @@ def run(df):
         df = df[(df['fecha'] >= pd.to_datetime(start_date)) & (df['fecha'] <= pd.to_datetime(end_date))]
         df['periodo'] = "Rango Personalizado"
         growth_lag = None
-
-    columna_linea = next((col for col in df.columns if "linea" in col and "negocio" in col), None)
-    columna_importe = next((col for col in df.columns if col in ["importe", "valor_usd", "valor mn", "valor_mn"]), None)
-
-    if columna_linea is None or columna_importe is None:
-        st.error("❌ No se encontraron las columnas necesarias ('línea' e 'importe').")
-        st.write("Columnas disponibles:", df.columns.tolist())
-        return
 
     pivot_table = df.pivot_table(
         index='periodo',
