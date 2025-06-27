@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,7 +8,7 @@ import io
 import unicodedata
 
 def run(df):
-    st.title("📊 Heatmap de Ventas (Entrada Genérica)")  
+    st.title("📊 Heatmap de Ventas (Entrada Genérica)")
 
     def clean_columns(columns):
         return (
@@ -24,7 +25,6 @@ def run(df):
                     return col
         return None
 
-    # Mapeo robusto de nombres de columnas
     mapa_columnas = {
         "linea": ["linea_prodcucto", "linea_producto", "linea_de_negocio", "linea producto", "linea_de_producto"],
         "importe": ["valor_mn", "importe", "valor_usd", "valor mn"]
@@ -35,7 +35,6 @@ def run(df):
     df['anio'] = df['fecha'].dt.year
     df['trimestre'] = df['fecha'].dt.to_period('Q').astype(str)
 
-    # Detectar columna de línea e importe
     columna_linea = detectar_columna(df, mapa_columnas["linea"])
     columna_importe = detectar_columna(df, mapa_columnas["importe"])
 
@@ -131,13 +130,23 @@ def run(df):
                 growth_table = df_growth.pct_change(periods=growth_lag) * 100
                 growth_table.index = df_filtered.index
 
+                # Indicador visual de nuevas ventas
+                nuevas_ventas = np.sum(np.isinf(growth_table.values))
+                st.sidebar.markdown("### 🔔 Detección de Nuevas Ventas")
+                if nuevas_ventas > 0:
+                    st.sidebar.success(f"💡 {nuevas_ventas} nuevas ventas detectadas (antes en cero)")
+                else:
+                    st.sidebar.info("⚪ No se detectaron nuevas ventas en este rango.")
+
                 for row in annot_data.index:
                     for col in annot_data.columns:
                         val = df_filtered.loc[row, col]
                         growth = growth_table.loc[row, col] if growth_table is not None else np.nan
                         if pd.notna(val):
-                            if pd.notna(growth):
+                            if pd.notna(growth) and not np.isinf(growth):
                                 annot_data.loc[row, col] = f"{val:,.0f}\n({growth:.1f}%)"
+                            elif np.isinf(growth):
+                                annot_data.loc[row, col] = f"{val:,.0f}\n<span style='color:#00FF00;'>NEW</span>"
                             else:
                                 annot_data.loc[row, col] = f"{val:,.0f}"
 
