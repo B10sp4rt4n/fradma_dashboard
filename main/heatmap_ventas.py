@@ -5,46 +5,22 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import io
 import unicodedata
-from unidecode import unidecode
 
-def clean_columns(columns):
-    return (
-        columns.astype(str)
-        .str.strip()
-        .str.lower()
-        .map(lambda x: unicodedata.normalize('NFKD', x).encode('ascii', errors='ignore').decode('utf-8'))
-    )
+def run(df):
+    st.title("📊 Heatmap de Ventas (Entrada Genérica)")
 
-def run_heatmap(df):
-    st.title("📊 Heatmap de Ventas por Línea de Negocio / Producto (Fuente: X AGENTE o Contpaq)")
+    def clean_columns(columns):
+        return (
+            columns.astype(str)
+            .str.strip()
+            .str.lower()
+            .map(lambda x: unicodedata.normalize('NFKD', x).encode('ascii', errors='ignore').decode('utf-8'))
+        )
 
-    df = df.copy()
+    df.columns = clean_columns(df.columns)
     df['mes_anio'] = df['fecha'].dt.strftime('%b-%Y')
     df['anio'] = df['fecha'].dt.year
     df['trimestre'] = df['fecha'].dt.to_period('Q').astype(str)
-
-    # Detección flexible de columna Línea
-    posibles_columnas_linea = [
-        "linea_de_negocio", "linea de negocio",
-        "linea_producto", "linea producto", "linea_de_producto",
-        "linea prodcucto", "linea_prodcucto", "Línea Prodcucto"
-    ]
-    columna_linea = next(
-        (col for col in df.columns if unidecode(col.lower().strip()) in [unidecode(x.lower()) for x in posibles_columnas_linea]),
-        None
-    )
-
-    # Detección flexible de columna Importe
-    posibles_columnas_importe = ["importe", "valor_usd", "valor mn", "valor_mn"]
-    columna_importe = next(
-        (col for col in df.columns if unidecode(col.lower().strip()) in [unidecode(x.lower()) for x in posibles_columnas_importe]),
-        None
-    )
-
-    if columna_linea is None or columna_importe is None:
-        st.error("❌ No se encontraron las columnas clave necesarias ('línea' e 'importe').")
-        st.write(f"Columnas disponibles: {df.columns.tolist()}")
-        return
 
     with st.sidebar:
         st.header("⚙️ Opciones de análisis")
@@ -54,7 +30,6 @@ def run_heatmap(df):
         )
         mostrar_crecimiento = st.checkbox("📈 Mostrar % de crecimiento vs periodo anterior")
 
-    growth_lag = None
     if periodo_tipo == "Mensual":
         df['periodo'] = df['mes_anio']
         growth_lag = 12
@@ -70,6 +45,15 @@ def run_heatmap(df):
             end_date = st.date_input("📅 Fecha fin:", value=df['fecha'].max())
         df = df[(df['fecha'] >= pd.to_datetime(start_date)) & (df['fecha'] <= pd.to_datetime(end_date))]
         df['periodo'] = "Rango Personalizado"
+        growth_lag = None
+
+    columna_linea = next((col for col in df.columns if "linea" in col and "negocio" in col), None)
+    columna_importe = next((col for col in df.columns if col in ["importe", "valor_usd", "valor mn", "valor_mn"]), None)
+
+    if columna_linea is None or columna_importe is None:
+        st.error("❌ No se encontraron las columnas necesarias ('línea' e 'importe').")
+        st.write("Columnas disponibles:", df.columns.tolist())
+        return
 
     pivot_table = df.pivot_table(
         index='periodo',
@@ -139,9 +123,10 @@ def run_heatmap(df):
                         growth = growth_table.loc[row, col] if growth_table is not None else np.nan
                         if pd.notna(val):
                             if pd.notna(growth):
-                                annot_data.loc[row, col] = f"{val:,.0f}\\n({growth:.1f}%)"
+                                annot_data.loc[row, col] = f"{val:,.0f}\n({growth:.1f}%)"
                             else:
                                 annot_data.loc[row, col] = f"{val:,.0f}"
+
             except Exception as e:
                 st.warning(f"⚠️ Error calculando crecimiento: {e}")
                 annot_data = df_filtered.applymap(lambda x: f"{x:,.0f}")
@@ -178,4 +163,3 @@ def run_heatmap(df):
             file_name="heatmap_filtrado.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
