@@ -116,6 +116,8 @@ def run(df):
         df_filtered = df_filtered[top_lineas]
 
         annot_data = df_filtered.copy().astype(str)
+        nuevas_lineas = set()
+
         if mostrar_crecimiento and growth_lag:
             df_growth = df_filtered.copy()
             try:
@@ -130,7 +132,6 @@ def run(df):
                 growth_table = df_growth.pct_change(periods=growth_lag) * 100
                 growth_table.index = df_filtered.index
 
-                # Indicador visual de nuevas ventas
                 nuevas_ventas = np.sum(np.isinf(growth_table.values))
                 st.sidebar.markdown("### 🔔 Detección de Nuevas Ventas")
                 if nuevas_ventas > 0:
@@ -146,9 +147,15 @@ def run(df):
                             if pd.notna(growth) and not np.isinf(growth):
                                 annot_data.loc[row, col] = f"{val:,.0f}\n({growth:.1f}%)"
                             elif np.isinf(growth):
-                                annot_data.loc[row, col] = f"{val:,.0f}\n<span style='color:#00FF00;'>NEW</span>"
+                                annot_data.loc[row, col] = "NEW"
+                                nuevas_lineas.add(col)
                             else:
                                 annot_data.loc[row, col] = f"{val:,.0f}"
+
+                if nuevas_lineas:
+                    st.markdown("### 🟢 Líneas de negocio con nuevas ventas:")
+                    for linea in nuevas_lineas:
+                        st.markdown(f"- {linea}")
 
             except Exception as e:
                 st.warning(f"⚠️ Error calculando crecimiento: {e}")
@@ -159,7 +166,7 @@ def run(df):
         fig, ax = plt.subplots(figsize=(max(10, len(top_lineas)*1.5), max(5, len(selected_periodos)*0.6)))
         sns.heatmap(
             df_filtered,
-            annot=annot_data.values,
+            annot=False,
             fmt="",
             cmap="Blues",
             cbar_kws={'label': 'Importe ($)'},
@@ -167,6 +174,19 @@ def run(df):
             linecolor='gray',
             ax=ax
         )
+
+        # Pintar anotaciones manuales
+        for i in range(len(df_filtered.index)):
+            for j in range(len(df_filtered.columns)):
+                text = annot_data.iloc[i, j]
+                color = 'lime' if text == "NEW" else 'black'
+                ax.text(
+                    j + 0.5, i + 0.5, text,
+                    ha='center', va='center',
+                    color=color,
+                    fontsize=9
+                )
+
         ax.set_xlabel("Línea de Negocio", fontsize=12)
         ax.set_ylabel("Periodo", fontsize=12)
         ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', fontsize=10)
