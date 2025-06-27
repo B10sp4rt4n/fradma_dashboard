@@ -179,38 +179,3 @@ def run_heatmap(df):
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-# --- Bloque principal para cargar archivo genérico ---
-
-uploaded_file = st.file_uploader("📂 Sube el archivo Excel (X AGENTE o Hoja1 tipo Contpaq):", type=["xlsx"])
-
-if uploaded_file is not None:
-    try:
-        df = pd.read_excel(uploaded_file, sheet_name="X AGENTE")
-        df.columns = clean_columns(df.columns)
-    except:
-        try:
-            df_temp = pd.read_excel(uploaded_file, sheet_name="Hoja1", skiprows=3)
-            df_temp.columns = clean_columns(df_temp.columns)
-
-            col_linea = next(
-                (col for col in df_temp.columns if 'linea' in col and any(x in col for x in ['negocio', 'producto', 'prodcucto'])),
-                None
-            )
-            col_importe = next(
-                (col for col in df_temp.columns if any(x in col for x in ['importe', 'valorusd', 'valor usd', 'usd'])),
-                None
-            )
-
-            if all(['fecha' in df_temp.columns, col_linea, col_importe]):
-                df = df_temp[['fecha', col_linea, col_importe]].copy()
-                df.columns = ['fecha', 'linea de negocio', 'importe']
-            else:
-                st.error("❌ No se encontraron columnas clave suficientes en Hoja1 tipo Contpaq.")
-                st.stop()
-        except Exception as e:
-            st.error(f"❌ Error leyendo el archivo: {e}")
-            st.stop()
-
-    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
-    df = df.dropna(subset=['fecha'])
-    run_heatmap(df)
