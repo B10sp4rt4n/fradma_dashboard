@@ -82,6 +82,7 @@ if archivo:
     for col in df.select_dtypes(include='object').columns:
         df[col] = df[col].astype(str)
 
+    # Detectar columna de ventas
     columnas_ventas_usd = ["valor_usd", "ventas_usd", "ventas_usd_con_iva"]
     columna_encontrada = next((col for col in columnas_ventas_usd if col in df.columns), None)
 
@@ -91,6 +92,7 @@ if archivo:
         st.write(df.columns.tolist())
     else:
         st.success(f"✅ Columna de ventas detectada: **{columna_encontrada}**")
+        st.session_state["columna_ventas"] = columna_encontrada
 
     if "fecha" in df.columns:
         df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
@@ -128,6 +130,6 @@ elif menu == "📊 Comparativo Año vs Año":
 
 elif menu == "🔥 Heatmap Ventas":
     if "df" in st.session_state:
-        heatmap_ventas.run(st.session_state["df"]) 
+        heatmap_ventas.run(st.session_state["df"])
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el Heatmap.")
