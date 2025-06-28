@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -51,8 +50,6 @@ def run():
     col2.metric("Total Ventas MN", f"${total_mn:,.0f}")
     col3.metric("Operaciones", f"{total_operaciones:,}")
 
-    # Reemplazado por bloque dinámico
-
     # === Filtros opcionales ===
     st.subheader("Filtros por Ejecutivo")
 
@@ -79,7 +76,6 @@ def run():
 
     if linea_sel != "Todas" and "linea_producto" in df.columns:
         df = df[df["linea_producto"] == linea_sel]
-
 
     # KPIs filtrados
     st.subheader("KPIs Filtrados")
@@ -117,6 +113,7 @@ def run():
             "operaciones": "{:,}"
         }))
 
+    # Gráficos por agente
     if "agente" in df.columns and not df.empty:
         st.subheader("📊 Visualización de Ventas por Vendedor")
 
@@ -127,170 +124,59 @@ def run():
 
         df_chart = df[["agente", "anio", "valor_usd"]].dropna()
 
+        # Agrupación base para todos los gráficos
+        resumen_agente = (
+            df_chart.groupby(["agente", "anio"])
+            .agg(
+                total_ventas=("valor_usd", "sum"),
+                operaciones=("valor_usd", "count")
+            )
+            .reset_index()
+        )
+        resumen_agente["ventas_moneda"] = resumen_agente["total_ventas"].apply(lambda x: f"${x:,.2f}")
+
         if chart_type == "Pie Chart":
             pie_data = (
-                df_chart.groupby("agente")["valor_usd"]
-                .sum()
+                resumen_agente.groupby("agente")
+                .agg(
+                    total_ventas=("total_ventas", "sum"),
+                    operaciones=("operaciones", "sum")
+                )
                 .reset_index()
-                .sort_values("valor_usd", ascending=False)
             )
+            pie_data["ventas_moneda"] = pie_data["total_ventas"].apply(lambda x: f"${x:,.2f}")
 
             chart = alt.Chart(pie_data).mark_arc(innerRadius=50).encode(
-                theta="valor_usd:Q",
+                theta="total_ventas:Q",
                 color="agente:N",
-                tooltip=["agente:N", "valor_usd:Q"]
+                tooltip=["agente:N", "ventas_moneda:N", "operaciones:Q"]
             ).properties(title="Participación de Vendedores (USD)")
 
         elif chart_type == "Barras Horizontales":
             bar_data = (
-                df_chart.groupby("agente")["valor_usd"]
-                .sum()
+                resumen_agente.groupby("agente")
+                .agg(
+                    total_ventas=("total_ventas", "sum"),
+                    operaciones=("operaciones", "sum")
+                )
                 .reset_index()
-                .sort_values("valor_usd", ascending=True)
+                .sort_values("total_ventas", ascending=True)
             )
+            bar_data["ventas_moneda"] = bar_data["total_ventas"].apply(lambda x: f"${x:,.2f}")
 
             chart = alt.Chart(bar_data).mark_bar().encode(
-                x="valor_usd:Q",
+                x="total_ventas:Q",
                 y=alt.Y("agente:N", sort="-x"),
-                tooltip=["agente:N", "valor_usd:Q"]
+                tooltip=["agente:N", "ventas_moneda:N", "operaciones:Q"]
             ).properties(title="Ventas Totales por Vendedor (USD)")
 
         elif chart_type == "Ventas por Año":
-            stacked_data = (
-                df_chart.groupby(["anio", "agente"])["valor_usd"]
-                .sum()
-                .reset_index()
-            )
-
-            chart = alt.Chart(stacked_data).mark_bar().encode(
-                x=alt.X("anio:O", title="Año"),
-                y=alt.Y("valor_usd:Q", title="Ventas USD"),
+            resumen_agente["anio"] = resumen_agente["anio"].astype(str)
+            chart = alt.Chart(resumen_agente).mark_bar().encode(
+                x=alt.X("anio:N", title="Año"),
+                y=alt.Y("total_ventas:Q", title="Ventas USD"),
                 color="agente:N",
-                tooltip=["agente:N", "valor_usd:Q", "anio:O"]
+                tooltip=["anio:N", "agente:N", "ventas_moneda:N", "operaciones:Q"]
             ).properties(title="Ventas por Vendedor en el Tiempo")
 
         st.altair_chart(chart, use_container_width=True)
-
-    # Sección opcional: Saldos por Ejecutivo desde CXC
-    st.subheader("💼 Análisis Complementario")
-
-    mostrar_cxc = st.checkbox("Mostrar Saldos por Ejecutivo (CxC)")
-
-    if mostrar_cxc:
-        try:
-            if "archivo_path" in st.session_state:
-                file_path = st.session_state["archivo_path"]
-            else:
-                st.error("No se encontró el archivo original para leer hojas 'CXC VIGENTES' y 'CXC VENCIDAS'.")
-                return
-
-            vigentes_df = pd.read_excel(file_path, sheet_name="CXC VIGENTES")
-            vencidas_df = pd.read_excel(file_path, sheet_name="CXC VENCIDAS")
-
-            # Normalizar columnas
-            vigentes_df.columns = vigentes_df.columns.str.lower().str.strip().str.replace(" ", "_")
-            vencidas_df.columns = vencidas_df.columns.str.lower().str.strip().str.replace(" ", "_")
-
-            # KPIs de vencimiento calculados por días reales desde columna 'vencimiento'
-            if "vencimiento" in vencidas_df.columns and "vendedor" in vencidas_df.columns:
-                st.subheader("⏱️ Indicadores por Vencimiento Real (calculado desde fecha de vencimiento)")
-
-                vencidas_df = vencidas_df.copy()
-                vencidas_df["vencimiento"] = pd.to_datetime(vencidas_df["vencimiento"], errors="coerce")
-                vencidas_df["dias_vencidos"] = (pd.Timestamp.today() - vencidas_df["vencimiento"]).dt.days
-
-                def clasificar_dias(d):
-                    if pd.isna(d):
-                        return "sin fecha"
-                    elif d <= 30:
-                        return "1-30 días"
-                    elif d <= 60:
-                        return "31-60 días"
-                    else:
-                        return "60+ días"
-
-                vencidas_df["rango_vencimiento"] = vencidas_df["dias_vencidos"].apply(clasificar_dias)
-
-                # Detección de columna de monto
-                posibles_montos = ["ventas_usd_con_iva", "ventas usd con iva", "valor_usd", "saldo_usd"]
-                columna_monto = next((col for col in vencidas_df.columns if col.lower() in posibles_montos), None)
-
-                if columna_monto is None:
-                    st.error("❌ No se encontró columna de monto en USD.")
-                else:
-                    vencidas_df["ventas_usd_con_iva"] = pd.to_numeric(vencidas_df[columna_monto], errors="coerce").fillna(0)
-
-                    resumen = vencidas_df.groupby(["vendedor", "rango_vencimiento"]).agg(
-                        cuentas=("ventas_usd_con_iva", "count"),
-                        monto_usd=("ventas_usd_con_iva", "sum")
-                    ).reset_index()
-
-                    tabla = resumen.pivot(index="vendedor", columns="rango_vencimiento", values=["cuentas", "monto_usd"])
-                    tabla.columns = [f"{a} {b}" for a, b in tabla.columns]
-                    tabla = tabla.fillna(0).reset_index()
-
-                    # Agregar fila de totales a la tabla
-                    fila_total = tabla.select_dtypes(include='number').sum().to_frame().T
-                    fila_total.insert(0, "vendedor", "TOTAL")
-                    tabla_con_totales = pd.concat([tabla, fila_total], ignore_index=True)
-                    st.dataframe(tabla_con_totales.style.format({
-                        col: "${:,.0f}" if "monto" in col else "{:,.0f}" for col in tabla_con_totales.columns if col != "vendedor"
-                    }))
-
-                    st.subheader("📊 Totales Generales por Rango")
-                    total_por_rango = vencidas_df.groupby("rango_vencimiento").agg(
-                        cuentas=("ventas_usd_con_iva", "count"),
-                        monto_usd=("ventas_usd_con_iva", "sum")
-                    ).reset_index()
-
-                    c1, c2, c3 = st.columns(3)
-
-                    def mostrar_metric(col, rango):
-                        fila = total_por_rango[total_por_rango["rango_vencimiento"] == rango]
-                        if not fila.empty:
-                            monto = fila["monto_usd"].values[0]
-                            cuentas = fila["cuentas"].values[0]
-                            col.metric(rango, f"${monto:,.0f}", f"{int(cuentas)} cuentas")
-                        else:
-                            col.metric(rango, "$0", "0 cuentas")
-
-                    mostrar_metric(c1, "1-30 días")
-                    mostrar_metric(c2, "31-60 días")
-                    mostrar_metric(c3, "60+ días")
-
-            vigente_totals = vigentes_df.groupby("vendedor")["ventas_usd_con_iva"].sum().reset_index()
-            vigente_totals["Tipo"] = "Vigente"
-
-            vencida_totals = vencidas_df.groupby("vendedor")["ventas_usd_con_iva"].sum().reset_index()
-            vencida_totals["Tipo"] = "Vencida"
-
-            saldos_ejecutivo = pd.concat([vigente_totals, vencida_totals])
-            saldos_ejecutivo.rename(columns={"ventas_usd_con_iva": "Saldo USD", "vendedor": "Vendedor"}, inplace=True)
-            saldos_ejecutivo = saldos_ejecutivo.dropna(subset=["Vendedor"])
-
-            chart = alt.Chart(saldos_ejecutivo).mark_bar().encode(
-                x=alt.X("Saldo USD:Q", title="Monto"),
-                y=alt.Y("Vendedor:N", sort="-x", title="Ejecutivo"),
-                color=alt.Color("Tipo:N", scale=alt.Scale(domain=["Vigente", "Vencida"], range=["green", "red"])),
-                tooltip=["Vendedor", "Tipo", "Saldo USD"]
-            ).properties(width=700, height=400)
-
-            st.altair_chart(chart, use_container_width=True)
-
-            resumen = saldos_ejecutivo.pivot_table(
-                index="Vendedor",
-                columns="Tipo",
-                values="Saldo USD",
-                aggfunc="sum",
-                fill_value=0
-            ).reset_index()
-
-            resumen["Total"] = resumen["Vigente"] + resumen["Vencida"]
-            resumen = resumen.sort_values(by="Total", ascending=False)
-
-            st.markdown("#### 📋 Resumen Tabular")
-            st.dataframe(resumen, use_container_width=True)
-
-        except Exception as e:
-            st.error(f"No se pudo cargar el análisis de CxC: {e}")
-
