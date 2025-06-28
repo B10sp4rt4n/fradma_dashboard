@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from unidecode import unidecode
 from main import main_kpi, main_comparativo, heatmap_ventas
-import kpi_cpc
+from main import kpi_cpc
 
 st.set_page_config(layout="wide")
 
