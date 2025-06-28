@@ -141,27 +141,30 @@ def run(df):
         if mostrar_crecimiento and growth_lag:
             try:
                 df_growth = df_filtered.copy()
-
-                if periodo_tipo != "Rango Personalizado" and df_period_ids is not None:
-                    df_growth['period_id'] = df_period_ids.loc[df_filtered.index]
-                    df_growth = df_growth.sort_values('period_id').drop(columns='period_id')
+                df_growth['periodo_id_num'] = df_period_ids.loc[df_filtered.index].astype(float)
+                df_growth = df_growth.sort_values('periodo_id_num').drop(columns='periodo_id_num')
 
                 if periodo_tipo == "Mensual":
-                    df_growth.index = pd.to_datetime(df_growth.index.str.split(' - ').str[1], format='%b-%Y', errors='coerce')
+                    df_growth.index = pd.to_datetime(
+                        [x.split(' - ')[1] for x in df_growth.index],
+                        format='%b-%Y',
+                        errors='coerce'
+                    )
                 elif periodo_tipo == "Trimestral":
-                    df_growth.index = pd.PeriodIndex(df_growth.index.str.split(' - ').str[1], freq='Q')
+                    df_growth.index = pd.PeriodIndex(
+                        [x.split(' - ')[1] for x in df_growth.index],
+                        freq='Q'
+                    )
                 elif periodo_tipo == "Anual":
-                    df_growth.index = pd.to_datetime(df_growth.index.str.split(' - ').str[1], format='%Y', errors='coerce')
+                    df_growth.index = pd.to_datetime(
+                        [x.split(' - ')[1] for x in df_growth.index],
+                        format='%Y',
+                        errors='coerce'
+                    )
 
+                df_growth = df_growth.sort_index()
                 growth_table = df_growth.pct_change(periods=growth_lag) * 100
-                growth_table = growth_table.loc[df_filtered.index]
-
-                nuevas_ventas = np.sum(np.isinf(growth_table.values))
-                st.sidebar.markdown("### 🔔 Detección de Nuevas Ventas")
-                if nuevas_ventas > 0:
-                    st.sidebar.success(f"💡 {nuevas_ventas} nuevas ventas detectadas (antes en cero)")
-                else:
-                    st.sidebar.info("⚪ No se detectaron nuevas ventas en este rango.")
+                growth_table = growth_table.reindex(df_filtered.index)
 
                 for row in annot_data.index:
                     for col in annot_data.columns:
