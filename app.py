@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from unidecode import unidecode
 from main import main_kpi, main_comparativo, heatmap_ventas
+import kpi_cpc
 
 st.set_page_config(layout="wide")
 
@@ -70,6 +71,9 @@ if archivo:
     else:
         df = detectar_y_cargar_archivo(archivo)
 
+    # Guardar archivo original para KPI CxC
+    st.session_state["archivo_excel"] = archivo
+
     # Detectar y renombrar columna de año
     for col in df.columns:
         if col in ["ano", "anio", "año", "aÃ±o", "aã±o"]:
@@ -115,7 +119,8 @@ if archivo:
 menu = st.sidebar.radio("Navegación", [
     "📈 KPIs Generales",
     "📊 Comparativo Año vs Año",
-    "🔥 Heatmap Ventas"
+    "🔥 Heatmap Ventas",
+    "💳 KPI Cartera CxC" 
 ])
 
 if menu == "📈 KPIs Generales":
@@ -133,3 +138,9 @@ elif menu == "🔥 Heatmap Ventas":
         heatmap_ventas.run(st.session_state["df"])
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el Heatmap.")
+
+elif menu == "💳 KPI Cartera CxC":
+    if "archivo_excel" in st.session_state:
+        kpi_cpc.run(st.session_state["archivo_excel"])
+    else:
+        st.warning("⚠️ Primero sube un archivo para visualizar CXC.")
