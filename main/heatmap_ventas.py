@@ -196,32 +196,28 @@ def run(df):
             ax=ax
         )
 
-       norm = plt.Normalize(vmin=df_filtered.min().min(), vmax=df_filtered.max().max())
+        norm = plt.Normalize(vmin=df_filtered.min().min(), vmax=df_filtered.max().max())
 
-for i in range(len(df_filtered.index)):
-    for j in range(len(df_filtered.columns)):
-        value = df_filtered.iloc[i, j]
-        text = annot_data.iloc[i, j]
+        for i in range(len(df_filtered.index)):
+            for j in range(len(df_filtered.columns)):
+                value = df_filtered.iloc[i, j]
+                text = annot_data.iloc[i, j]
 
-        if pd.notna(value):
-            # Calcular intensidad relativa
-            intensity = norm(value)
+                if pd.notna(value):
+                    intensity = norm(value)
+                    if text == "NEW":
+                        text_color = 'lime'
+                    elif intensity > 0.6:
+                        text_color = 'white'
+                    else:
+                        text_color = 'black'
 
-            # Cambiar color de texto según intensidad
-            if text == "NEW":
-                text_color = 'lime'
-            elif intensity > 0.6:  # Umbral de intensidad, puedes ajustar
-                text_color = 'white'
-            else:
-                text_color = 'black'
-
-            ax.text(
-                j + 0.5, i + 0.5, text,
-                ha='center', va='center',
-                color=text_color,
-                fontsize=8
-            )
-
+                    ax.text(
+                        j + 0.5, i + 0.5, text,
+                        ha='center', va='center',
+                        color=text_color,
+                        fontsize=8
+                    )
 
         ax.set_xlabel("Línea de Negocio", fontsize=12)
         ax.set_ylabel("Periodo", fontsize=12)
