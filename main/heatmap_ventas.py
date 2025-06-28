@@ -145,26 +145,20 @@ def run(df):
                 df_growth = df_growth.sort_values('periodo_id_num').drop(columns='periodo_id_num')
 
                 if periodo_tipo == "Mensual":
-                    df_growth.index = pd.to_datetime(
-                        [x.split(' - ')[1] for x in df_growth.index],
-                        format='%b-%Y',
-                        errors='coerce'
-                    )
+                    df_growth['periodo_base'] = [x.split(' - ')[1][:3] for x in df_growth.index]
                 elif periodo_tipo == "Trimestral":
-                    df_growth.index = pd.PeriodIndex(
-                        [x.split(' - ')[1] for x in df_growth.index],
-                        freq='Q'
-                    )
+                    df_growth['periodo_base'] = [x.split(' - ')[1] for x in df_growth.index]
+                    df_growth['periodo_base'] = df_growth['periodo_base'].str.extract(r'(Q[1-4])')
                 elif periodo_tipo == "Anual":
-                    df_growth.index = pd.to_datetime(
-                        [x.split(' - ')[1] for x in df_growth.index],
-                        format='%Y',
-                        errors='coerce'
-                    )
+                    df_growth['periodo_base'] = [x.split(' - ')[1] for x in df_growth.index]
+                else:
+                    df_growth['periodo_base'] = np.nan
 
-                df_growth = df_growth.sort_index()
-                growth_table = df_growth.pct_change(periods=growth_lag) * 100
-                growth_table = growth_table.reindex(df_filtered.index)
+                if periodo_tipo != "Rango Personalizado":
+                    growth_table = df_growth.groupby('periodo_base').pct_change(periods=1) * 100
+                    growth_table = growth_table.loc[:, df_filtered.columns]
+                else:
+                    growth_table = None
 
                 for row in annot_data.index:
                     for col in annot_data.columns:
@@ -185,7 +179,7 @@ def run(df):
                         st.markdown(f"- {linea}")
 
             except Exception as e:
-                st.warning(f"⚠️ Error calculando crecimiento: {e}")
+                st.warning(f"⚠️ Error calculando crecimiento YoY: {e}")
                 annot_data = df_filtered.applymap(lambda x: format_currency(x))
         else:
             annot_data = df_filtered.applymap(lambda x: format_currency(x))
