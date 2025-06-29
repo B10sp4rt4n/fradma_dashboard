@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 from unidecode import unidecode
 from datetime import datetime
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 
 def normalizar_columnas(df):
     nuevas_columnas = []
@@ -148,14 +150,15 @@ def run(archivo):
                 hoy = pd.Timestamp.today()
                 df_deudas['dias_vencido'] = (hoy - df_deudas['fecha_vencimiento']).dt.days
                 
-                # Clasificación de riesgo
+                # Clasificación de riesgo con colores
                 bins = [-np.inf, 0, 30, 60, 90, 180, np.inf]
-                labels = ['0. Bajo (Por vencer)', 
-                         '1. Moderado (1-30 días)', 
-                         '2. Medio (31-60 días)', 
-                         '3. Alto (61-90 días)', 
-                         '4. Crítico (91-180 días)', 
-                         '5. Irrecuperable (>180 días)']
+                labels = ['Por vencer', 
+                         '1-30 días', 
+                         '31-60 días', 
+                         '61-90 días', 
+                         '91-180 días', 
+                         '>180 días']
+                colores = ['#4CAF50', '#8BC34A', '#FFEB3B', '#FF9800', '#F44336', '#B71C1C']  # Verde, verde claro, amarillo, naranja, rojo, rojo oscuro
                 
                 df_deudas['nivel_riesgo'] = pd.cut(
                     df_deudas['dias_vencido'], 
@@ -170,18 +173,127 @@ def run(archivo):
                 # Ordenar por nivel de riesgo
                 riesgo_df = riesgo_df.sort_values('nivel_riesgo')
                 
-                st.dataframe(riesgo_df.style.format({
-                    'saldo_adeudado': '${:,.2f}',
-                    'porcentaje': '{:.1f}%'
-                }))
+                # Mostrar semáforo visual
+                st.write("### 🔴🟠🟡🟢 Semáforo de Riesgo")
                 
-                # Gráfico de riesgo
-                st.bar_chart(riesgo_df.set_index('nivel_riesgo')['saldo_adeudado'])
+                # Crear tarjetas de colores para cada categoría
+                for idx, row in riesgo_df.iterrows():
+                    nivel = row['nivel_riesgo']
+                    monto = row['saldo_adeudado']
+                    pct = row['porcentaje']
+                    color = colores[idx]
+                    
+                    # Crear tarjeta con color de fondo
+                    st.markdown(
+                        f"""
+                        <div style="background-color:{color}; padding:10px; border-radius:5px; margin-bottom:10px; color:white; font-weight:bold;">
+                            <div style="display:flex; justify-content:space-between;">
+                                <span>{nivel}</span>
+                                <span>${monto:,.2f} ({pct:.1f}%)</span>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                
+                # Gráfico de barras con colores por categoría
+                st.write("### 📊 Distribución de Deuda por Antigüedad")
+                fig, ax = plt.subplots()
+                bars = ax.bar(riesgo_df['nivel_riesgo'], riesgo_df['saldo_adeudado'], color=colores)
+                ax.set_title('Distribución por Antigüedad de Deuda')
+                ax.set_ylabel('Monto Adeudado ($)')
+                ax.yaxis.set_major_formatter('${x:,.0f}')
+                plt.xticks(rotation=45)
+                
+                # Agregar etiquetas de valor
+                for bar in bars:
+                    height = bar.get_height()
+                    ax.annotate(f'${height:,.0f}',
+                                xy=(bar.get_x() + bar.get_width() / 2, height),
+                                xytext=(0, 3),  # 3 points vertical offset
+                                textcoords="offset points",
+                                ha='center', va='bottom')
+                
+                st.pyplot(fig)
                 
             except Exception as e:
                 st.error(f"❌ Error en análisis de vencimientos: {str(e)}")
         else:
             st.warning("ℹ️ No se encontró columna de vencimiento")
+            
+        # =====================================================================
+        # ANÁLISIS DE AGENTES (VENDEDORES) CON LÓGICA DE ANTIGÜEDAD
+        # =====================================================================
+        st.subheader("👤 Distribución de Deuda por Agente")
+        
+        if 'vendedor' in df_deudas.columns:
+            # Asegurar que tenemos los días vencidos calculados
+            if 'dias_vencido' not in df_deudas.columns and 'fecha_vencimiento' in df_deudas.columns:
+                try:
+                    hoy = pd.Timestamp.today()
+                    df_deudas['dias_vencido'] = (hoy - pd.to_datetime(df_deudas['fecha_vencimiento'], errors='coerce')).dt.days
+                except:
+                    pass
+            
+            if 'dias_vencido' in df_deudas.columns:
+                # Definir categorías y colores para agentes
+                bins_agentes = [-np.inf, 0, 30, 60, 90, np.inf]
+                labels_agentes = ['Por vencer', '1-30 días', '31-60 días', '61-90 días', '>90 días']
+                colores_agentes = ['#4CAF50', '#8BC34A', '#FFEB3B', '#FF9800', '#F44336']  # Verde, verde claro, amarillo, naranja, rojo
+                
+                # Clasificar la deuda de los agentes
+                df_deudas['categoria_agente'] = pd.cut(
+                    df_deudas['dias_vencido'], 
+                    bins=bins_agentes, 
+                    labels=labels_agentes
+                )
+                
+                # Agrupar por agente y categoría
+                agente_categoria = df_deudas.groupby(['vendedor', 'categoria_agente'])['saldo_adeudado'].sum().unstack().fillna(0)
+                
+                # Ordenar por el total de deuda
+                agente_categoria['Total'] = agente_categoria.sum(axis=1)
+                agente_categoria = agente_categoria.sort_values('Total', ascending=False)
+                
+                # Crear gráfico de barras apiladas
+                st.write("### 📊 Distribución por Agente y Antigüedad")
+                fig, ax = plt.subplots(figsize=(12, 6))
+                
+                # Preparar datos para el gráfico
+                bottom = np.zeros(len(agente_categoria))
+                for i, categoria in enumerate(labels_agentes):
+                    if categoria in agente_categoria.columns:
+                        valores = agente_categoria[categoria]
+                        ax.bar(agente_categoria.index, valores, bottom=bottom, label=categoria, color=colores_agentes[i])
+                        bottom += valores
+                
+                # Personalizar gráfico
+                ax.set_title('Deuda por Agente y Antigüedad', fontsize=14)
+                ax.set_ylabel('Monto Adeudado ($)', fontsize=12)
+                ax.set_xlabel('Agente', fontsize=12)
+                ax.tick_params(axis='x', rotation=45)
+                ax.legend(title='Días Vencidos', loc='upper right')
+                ax.yaxis.set_major_formatter('${x:,.0f}')
+                
+                st.pyplot(fig)
+                
+                # Mostrar tabla resumen
+                st.write("### 📋 Resumen por Agente")
+                resumen_agente = agente_categoria.copy()
+                resumen_agente = resumen_agente.sort_values('Total', ascending=False)
+                
+                # Formatear valores
+                for col in resumen_agente.columns:
+                    if col != 'Total':
+                        resumen_agente[col] = resumen_agente[col].apply(lambda x: f"${x:,.2f}" if x > 0 else "")
+                resumen_agente['Total'] = resumen_agente['Total'].apply(lambda x: f"${x:,.2f}")
+                
+                st.dataframe(resumen_agente)
+                
+            else:
+                st.warning("ℹ️ No se pudo calcular la antigüedad para los agentes")
+        else:
+            st.warning("ℹ️ No se encontró información de agentes (vendedores)")
 
         # Desglose detallado por deudor (CLIENTE - COLUMNA F)
         st.subheader("🔍 Detalle Completo por Deudor (Columna Cliente)")
