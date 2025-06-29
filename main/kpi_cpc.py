@@ -7,12 +7,17 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
 def normalizar_columnas(df):
+    """
+    Normaliza los nombres de las columnas de un DataFrame, eliminando tildes,
+    espacios y convirtiéndolos a minúsculas, y maneja duplicados.
+    """
     nuevas_columnas = []
     contador = {}
     for col in df.columns:
         col_str = str(col).lower().strip().replace(" ", "_")
-        col_str = unidecode(col_str)
+        col_str = unidecode(col_str) # Elimina tildes y caracteres especiales
         
+        # Manejar columnas duplicadas
         if col_str in contador:
             contador[col_str] += 1
             col_str = f"{col_str}_{contador[col_str]}"
@@ -24,6 +29,9 @@ def normalizar_columnas(df):
     return df
 
 def run(archivo):
+    """
+    Función principal para procesar el archivo Excel y generar el dashboard.
+    """
     if not archivo.name.endswith(('.xls', '.xlsx')):
         st.error("❌ Solo se aceptan archivos Excel para el reporte de deudas.")
         return
@@ -36,246 +44,174 @@ def run(archivo):
             st.error("❌ No se encontraron las hojas requeridas: 'CXC VIGENTES' y 'CXC VENCIDAS'.")
             return
 
-        st.info("✅ Fuente: Hojas 'CXC VIGENTES' y 'CXC VENCIDAS'")
+        st.info("✅ Fuente: Hojas 'CXC VIGENTES' y 'CXC VENCIDAS' detectadas.")
 
-        # Leer y normalizar datos
-        df_vigentes = pd.read_excel(xls, sheet_name='CXC VIGENTES')
-        df_vencidas = pd.read_excel(xls, sheet_name='CXC VENCIDAS')
-        
+        df_vigentes = pd.read_excel(xls, "CXC VIGENTES")
+        df_vencidas = pd.read_excel(xls, "CXC VENCIDAS")
+
+        # Normalizar columnas de ambos DataFrames
         df_vigentes = normalizar_columnas(df_vigentes)
         df_vencidas = normalizar_columnas(df_vencidas)
+
+        # Unificar DataFrames
+        df_deudas = pd.concat([df_vigentes, df_vencidas], ignore_index=True)
+
+        # Convertir tipos de datos
+        # Intentar con múltiples formatos de fecha si es necesario
+        df_deudas['fecha_vencimiento'] = pd.to_datetime(df_deudas['fecha_vencimiento'], errors='coerce')
+        df_deudas['saldo_adeudado'] = pd.to_numeric(df_deudas['saldo_adeudado'], errors='coerce')
         
-        # Renombrar columnas clave
-        column_rename = {
-            'razon_social': 'deudor',
-            'linea_de_negocio': 'linea_negocio',
-            'vendedor': 'vendedor',
-            'saldo': 'saldo_adeudado',
-            'saldo_usd': 'saldo_adeudado',
-            'estatus': 'estatus'
+        # Eliminar filas con NaN en columnas críticas
+        df_deudas.dropna(subset=['fecha_vencimiento', 'saldo_adeudado'], inplace=True)
+
+        # Calcular días vencidos
+        df_deudas['dias_vencido'] = (datetime.now() - df_deudas['fecha_vencimiento']).dt.days
+        
+        # Calcular el total adeudado
+        total_adeudado = df_deudas['saldo_adeudado'].sum()
+
+        st.title("💰 Reporte de Cuentas por Cobrar (Fradma)")
+        st.markdown(f"### Saldo Total Adeudado: **${total_adeudado:,.2f}**")
+
+        # --- Análisis de Deudas por Antigüedad (EXISTENTE) ---
+        st.subheader("📊 Análisis de Deudas por Antigüedad")
+        
+        # Define rangos de antigüedad
+        rangos_antiguedad = {
+            "Vigente": lambda x: x <= 0,
+            "1-30 días vencido": lambda x: x > 0 and x <= 30,
+            "31-60 días vencido": lambda x: x > 30 and x <= 60,
+            "61-90 días vencido": lambda x: x > 60 and x <= 90,
+            "Más de 90 días vencido": lambda x: x > 90
         }
         
-        for df in [df_vigentes, df_vencidas]:
-            for original, nuevo in column_rename.items():
-                if original in df.columns:
-                    df.rename(columns={original: nuevo}, inplace=True)
-        
-        # Agregar origen
-        df_vigentes['origen'] = 'VIGENTE'
-        df_vencidas['origen'] = 'VENCIDA'
-        
-        # Unificar columnas
-        common_cols = list(set(df_vigentes.columns) & set(df_vencidas.columns))
-        df_deudas = pd.concat([
-            df_vigentes[common_cols], 
-            df_vencidas[common_cols]
-        ], ignore_index=True)
-        
-        # Limpieza
-        df_deudas = df_deudas.dropna(axis=1, how='all')
-        
-        # Manejar duplicados
-        duplicados = df_deudas.columns[df_deudas.columns.duplicated()]
-        if not duplicados.empty:
-            df_deudas = df_deudas.loc[:, ~df_deudas.columns.duplicated(keep='first')]
+        data_antiguedad = {}
+        for rango, condicion in rangos_antiguedad.items():
+            saldo = df_deudas[condicion(df_deudas['dias_vencido'])]['saldo_adeudado'].sum()
+            data_antiguedad[rango] = saldo
 
-        # Validar columna clave
-        if 'saldo_adeudado' not in df_deudas.columns:
-            st.error("❌ No existe columna de saldo en los datos.")
-            return
+        df_antiguedad = pd.DataFrame(list(data_antiguedad.items()), columns=['Rango', 'Saldo Adeudado'])
+        df_antiguedad['Porcentaje'] = (df_antiguedad['Saldo Adeudado'] / total_adeudado * 100).round(2)
+        
+        st.dataframe(df_antiguedad.style.format({
+            'Saldo Adeudado': "${:,.2f}",
+            'Porcentaje': "{:.2f}%"
+        }))
+
+        # Gráfico de pastel por antigüedad
+        if total_adeudado > 0:
+            fig_pie, ax_pie = plt.subplots(figsize=(8, 8))
             
-        # Convertir saldo
-        saldo_serie = df_deudas['saldo_adeudado'].astype(str)
-        saldo_limpio = saldo_serie.str.replace(r'[^\d.]', '', regex=True)
-        df_deudas['saldo_adeudado'] = pd.to_numeric(saldo_limpio, errors='coerce').fillna(0)
+            # Colores personalizados (ej. azul para vigente, rojos para vencidos)
+            colores = [
+                '#66c2a5' if r == 'Vigente' else
+                '#fc8d62' if r == '1-30 días vencido' else
+                '#e78ac3' if r == '31-60 días vencido' else
+                '#a6d854' if r == '61-90 días vencido' else
+                '#e5c494'
+                for r in df_antiguedad['Rango']
+            ]
 
-        # ---------------------------------------------------------------------
-        # NUEVO ENFOQUE: REPORTE DE DEUDAS A FRADMA
-        # ---------------------------------------------------------------------
-        st.header("📊 Reporte de Deudas a Fradma")
-        
-        # KPIs principales
-        total_adeudado = df_deudas['saldo_adeudado'].sum()
-        col1, col2 = st.columns(2)
-        col1.metric("Total Adeudado a Fradma", f"${total_adeudado:,.2f}")
-        
-        # Calcular vencimientos
-        try:
-            mask_vencida = df_deudas['estatus'].str.contains('VENCID', na=False)
-            vencida = df_deudas[mask_vencida]['saldo_adeudado'].sum()
-            col2.metric("Deuda Vencida", f"${vencida:,.2f}", 
-                       delta=f"{(vencida/total_adeudado*100):.1f}%",
-                       delta_color="inverse")
-        except:
-            vencida = 0
-
-        # Top 5 deudores
-        st.subheader("🔝 Principales Deudores")
-        if 'deudor' in df_deudas.columns:
-            top_deudores = df_deudas.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
-            st.dataframe(top_deudores.reset_index().rename(
-                columns={'deudor': 'Deudor', 'saldo_adeudado': 'Monto Adeudado ($)'}
-            ).style.format({'Monto Adeudado ($)': '${:,.2f}'}))
-            
-            # Gráfico de concentración
-            st.bar_chart(top_deudores)
+            wedges, texts, autotexts = ax_pie.pie(
+                df_antiguedad['Saldo Adeudado'], 
+                labels=df_antiguedad['Rango'], 
+                autopct='%1.1f%%', 
+                startangle=90,
+                colors=colores,
+                pctdistance=0.85 # Distancia de los porcentajes del centro
+            )
+            ax_pie.axis('equal') # Equal aspect ratio ensures that pie is drawn as a circle.
+            ax_pie.set_title('Distribución de Deuda por Antigüedad')
+            st.pyplot(fig_pie)
         else:
-            st.warning("ℹ️ No se encontró información de deudores")
+            st.info("ℹ️ No hay deuda para generar gráfico de antigüedad.")
 
-        # Análisis de riesgo por antigüedad
-        st.subheader("📅 Perfil de Riesgo por Antigüedad")
-        if 'vencimiento' in df_deudas.columns:
-            try:
-                df_deudas['fecha_vencimiento'] = pd.to_datetime(
-                    df_deudas['vencimiento'], errors='coerce', dayfirst=True
-                )
-                
-                hoy = pd.Timestamp.today()
-                df_deudas['dias_vencido'] = (hoy - df_deudas['fecha_vencimiento']).dt.days
-                
-                # Clasificación de riesgo
-                bins = [-np.inf, 0, 30, 60, 90, np.inf]
-                labels = ['Vigente (0 días)',
-                         '1-30 días',
-                         '31-60 días',
-                         '61-90 días',
-                         '>90 días']
-                
-                df_deudas['nivel_riesgo'] = pd.cut(
-                    df_deudas['dias_vencido'], 
-                    bins=bins, 
-                    labels=labels
-                )
-                
-                # Resumen de riesgo
-                riesgo_df = df_deudas.groupby('nivel_riesgo')['saldo_adeudado'].sum().reset_index()
-                riesgo_df['porcentaje'] = (riesgo_df['saldo_adeudado'] / total_adeudado) * 100
-                
-                # Ordenar por nivel de riesgo
-                riesgo_df = riesgo_df.sort_values('nivel_riesgo')
-                
-                st.dataframe(riesgo_df.style.format({
-                    'saldo_adeudado': '${:,.2f}',
-                    'porcentaje': '{:.1f}%'
+        # --- Detalle de Deudores Principales (EXISTENTE) ---
+        st.subheader("🔍 Detalle de Deudores Principales")
+        
+        if 'deudor' in df_deudas.columns:
+            deudores_principales = df_deudas.groupby('deudor')['saldo_adeudado'].sum().sort_values(ascending=False)
+            
+            if not deudores_principales.empty:
+                st.write("Top 10 Deudores:")
+                st.dataframe(deudores_principales.head(10).reset_index().style.format({
+                    'saldo_adeudado': "${:,.2f}"
                 }))
                 
-                # Gráfico de riesgo
-                st.bar_chart(riesgo_df.set_index('nivel_riesgo')['saldo_adeudado'])
+                # Permite al usuario seleccionar un deudor para ver el detalle
+                st.write("---")
+                st.subheader("🔎 Búsqueda de Deudor Individual")
+                deudor_seleccionado = st.selectbox(
+                    "Selecciona un deudor para ver el detalle:",
+                    [''] + list(deudores_principales.index.unique())
+                )
                 
-            except Exception as e:
-                st.error(f"❌ Error en análisis de vencimientos: {str(e)}")
+                if deudor_seleccionado:
+                    deudor_df = df_deudas[df_deudas['deudor'] == deudor_seleccionado].copy()
+                    
+                    st.write(f"### Detalle para: {deudor_seleccionado}")
+                    
+                    total_deudor = deudor_df['saldo_adeudado'].sum()
+                    st.write(f"**Saldo Total Adeudado por {deudor_seleccionado}: ${total_deudor:,.2f}**")
+                    
+                    # Columnas a mostrar para el detalle del deudor
+                    cols = [col for col in ['folio', 'fecha_vencimiento', 'saldo_adeudado', 'dias_vencido'] if col in deudor_df.columns]
+                    st.dataframe(deudor_df[cols].sort_values('fecha_vencimiento', ascending=False).style.format({
+                        'saldo_adeudado': "${:,.2f}"
+                    }))
+                    
+                    # Histórico de pagos (si existe la columna y hay lógica)
+                    if 'fecha_pago' in df_deudas.columns and 'monto_pagado' in df_deudas.columns:
+                        st.write("**Histórico de pagos:**")
+                        # Asumiendo que 'monto_pagado' está en la misma fila que el 'deudor'
+                        # y 'saldo_adeudado' se actualiza a 0 o negativo tras el pago.
+                        # Esta lógica puede necesitar ajuste según tus datos reales.
+                        pagos = deudor_df[deudor_df['monto_pagado'] > 0] 
+                        if not pagos.empty:
+                            st.dataframe(pagos[['fecha_pago', 'monto_pagado']].style.format({'monto_pagado': "${:,.2f}"}))
+                        else:
+                            st.info("ℹ️ No se encontraron registros de pagos recientes para este deudor.")
+                    else:
+                        st.info("ℹ️ Columnas 'fecha_pago' o 'monto_pagado' no encontradas para el histórico de pagos.")
+            else:
+                st.warning("ℹ️ No se encontró información de deudores principales.")
         else:
-            st.warning("ℹ️ No se encontró columna de vencimiento")
-            
-        # =====================================================================
-        # NUEVA SECCIÓN: DISTRIBUCIÓN DE DEUDA POR AGENTE (VENDEDOR)
-        # =====================================================================
-        if 'vendedor' in df_deudas.columns and 'dias_vencido' in df_deudas.columns:
-            st.subheader("👤 Distribución de Deuda por Agente")
-            
-            # Crear categorías para los días vencidos
-            condiciones = [
-                (df_deudas['dias_vencido'] <= 0),
-                (df_deudas['dias_vencido'] > 0) & (df_deudas['dias_vencido'] <= 30),
-                (df_deudas['dias_vencido'] > 30) & (df_deudas['dias_vencido'] <= 60),
-                (df_deudas['dias_vencido'] > 60) & (df_deudas['dias_vencido'] <= 90),
-                (df_deudas['dias_vencido'] > 90)
-            ]
-            
-            categorias = ['Vigente (0 días)', '1-30 días', '31-60 días', '61-90 días', '>90 días']
-            colores = ['#4CAF50', '#8BC34A', '#FFEB3B', '#FF9800', '#F44336']  # Verde, verde claro, amarillo, naranja, rojo
-            
-            # Crear columna de categoría
-            df_deudas['categoria_dias'] = np.select(condiciones, categorias, default='Desconocido')
-            
-            # Agrupar por vendedor y categoría
-            df_agente = df_deudas.groupby(['vendedor', 'categoria_dias'])['saldo_adeudado'].sum().unstack().fillna(0)
-            
-            # Ordenar por saldo total
-            df_agente['Total'] = df_agente.sum(axis=1)
-            df_agente = df_agente.sort_values('Total', ascending=False)
-            
-            # Mantener solo las categorías existentes en los datos
-            categorias_presentes = [cat for cat in categorias if cat in df_agente.columns]
-            df_agente = df_agente[categorias_presentes]
-            
-            # Crear gráfico de barras apiladas
-            fig, ax = plt.subplots(figsize=(12, 6))
-            
-            # Preparar datos para el gráfico
-            bottom = np.zeros(len(df_agente))
-            for i, categoria in enumerate(categorias_presentes):
-                valores = df_agente[categoria]
-                ax.bar(df_agente.index, valores, bottom=bottom, label=categoria, color=colores[i])
-                bottom += valores
-            
-            # Personalizar gráfico
-            ax.set_title('Distribución de Deuda por Agente y Antigüedad', fontsize=14)
-            ax.set_ylabel('Monto Adeudado ($)', fontsize=12)
-            ax.set_xlabel('Agente', fontsize=12)
-            ax.tick_params(axis='x', rotation=45)
-            ax.legend(title='Días Vencidos', loc='upper right')
-            
-            # Formatear eje Y con separadores de miles
-            ax.yaxis.set_major_formatter('${x:,.0f}')
-            
-            # Mostrar gráfico en Streamlit
-            st.pyplot(fig)
-            
-            # Tabla resumen
-            st.subheader("📊 Resumen por Agente")
-            
-            # Calcular totales por agente
-            resumen_agente = df_agente.copy()
-            resumen_agente['Total'] = resumen_agente.sum(axis=1)
-            
-            # Calcular porcentaje del total
-            resumen_agente['% del Total'] = (resumen_agente['Total'] / total_adeudado) * 100
-            
-            # Formatear valores
-            for col in resumen_agente.columns:
-                if col != '% del Total':
-                    resumen_agente[col] = resumen_agente[col].apply(lambda x: f"${x:,.2f}")
-                else:
-                    resumen_agente[col] = resumen_agente[col].apply(lambda x: f"{x:.1f}%")
-            
-            st.dataframe(resumen_agente)
-            
-        else:
-            st.warning("ℹ️ No se encontró información suficiente para mostrar distribución por agente")
-        
-        # Desglose detallado por deudor
-        st.subheader("🔍 Detalle Completo por Deudor")
-        if 'deudor' in df_deudas.columns:
-            # Seleccionar deudor
-            deudores = df_deudas['deudor'].unique().tolist()
-            selected_deudor = st.selectbox("Seleccionar Deudor", deudores)
-            
-            # Filtrar datos
-            deudor_df = df_deudas[df_deudas['deudor'] == selected_deudor]
-            total_deudor = deudor_df['saldo_adeudado'].sum()
-            
-            st.metric(f"Total Adeudado por {selected_deudor}", f"${total_deudor:,.2f}")
-            
-            # Mostrar documentos pendientes
-            st.write("**Documentos pendientes:**")
-            cols = ['fecha_vencimiento', 'saldo_adeudado', 'estatus', 'dias_vencido'] 
-            cols = [c for c in cols if c in deudor_df.columns]
-            st.dataframe(deudor_df[cols].sort_values('fecha_vencimiento', ascending=False))
-            
-            # Histórico de pagos (si existe)
-            if 'fecha_pago' in df_deudas.columns:
-                st.write("**Histórico de pagos:**")
-                pagos = deudor_df[deudor_df['saldo_adeudado'] <= 0]  # Suponiendo que pagos son negativos
-                if not pagos.empty:
-                    st.dataframe(pagos[['fecha_pago', 'monto_pagado']])
-                else:
-                    st.info("ℹ️ No se encontraron registros de pagos recientes")
-        else:
-            st.warning("ℹ️ No se encontró información de deudores")
+            st.warning("⚠️ La columna 'deudor' no se encontró para el análisis de deudores principales.")
 
-        # Resumen ejecutivo
+        # --- NUEVA SECCIÓN: Gráficos de Deuda por Agente (AÑADIDA) ---
+        st.subheader("📈 Deuda Pendiente por Agente")
+        
+        # Asegúrate de que la columna 'agente' exista después de normalizar
+        # IMPORTANTE: Asegúrate de que tus archivos Excel tengan una columna para el agente (ej. 'Agente', 'Vendedor')
+        # que será normalizada por la función 'normalizar_columnas'.
+        if 'agente' in df_deudas.columns:
+            deuda_por_agente = df_deudas.groupby('agente')['saldo_adeudado'].sum().sort_values(ascending=False)
+            
+            if not deuda_por_agente.empty:
+                fig_agente, ax_agente = plt.subplots(figsize=(12, 7))
+                deuda_por_agente.plot(kind='bar', ax=ax_agente, color='teal')
+                ax_agente.set_title('Deuda Total Pendiente por Agente')
+                ax_agente.set_xlabel('Agente')
+                ax_agente.set_ylabel('Saldo Adeudado')
+                ax_agente.ticklabel_format(style='plain', axis='y') # Evitar notación científica en el eje Y
+                plt.xticks(rotation=45, ha='right') # Inclinar etiquetas para mejor lectura
+                plt.tight_layout() # Ajustar el layout para evitar cortes
+                st.pyplot(fig_agente)
+
+                # También puedes mostrar una tabla con los datos por agente
+                st.write("Detalle de Deuda por Agente:")
+                st.dataframe(deuda_por_agente.reset_index().style.format({
+                    'saldo_adeudado': "${:,.2f}"
+                }))
+            else:
+                st.info("ℹ️ No hay datos disponibles para generar el gráfico de deuda por agente (después de filtros o en caso de datos vacíos).")
+        else:
+            st.warning("⚠️ No se encontró la columna 'agente' en los datos para realizar el análisis por agente. Asegúrate de que existe en tus archivos Excel.")
+
+
+        # --- Resumen Ejecutivo (EXISTENTE) ---
         st.subheader("📝 Resumen Ejecutivo")
+        
         st.write(f"Fradma tiene **${total_adeudado:,.2f}** en deudas pendientes de cobro, distribuidos en:")
         
         if 'deudor' in df_deudas.columns:
@@ -284,11 +220,24 @@ def run(archivo):
         
         if 'dias_vencido' in df_deudas.columns:
             deuda_vencida = df_deudas[df_deudas['dias_vencido'] > 0]['saldo_adeudado'].sum()
-            st.write(f"- **${deuda_vencida:,.2f} en deuda vencida**")
+            st.write(f"- **${deuda_vencida:,.2f}** corresponde a **deuda vencida**.")
+            
+            porcentaje_vencido = (deuda_vencida / total_adeudado * 100).round(2) if total_adeudado > 0 else 0
+            st.write(f"- Lo que representa un **{porcentaje_vencido}%** del total adeudado.")
         
-        st.write("Este reporte muestra la exposición financiera actual de Fradma con sus deudores.")
+        st.write("---")
+        st.write("Este informe proporciona una visión general de las cuentas por cobrar, ayudando a identificar áreas de enfoque para la gestión de la cartera.")
 
     except Exception as e:
-        st.error(f"❌ Error crítico: {str(e)}")
-        import traceback
-        st.error(traceback.format_exc())
+        st.error(f"Se produjo un error al procesar el archivo: {e}")
+        st.info("Asegúrate de que el archivo Excel no esté abierto y que las hojas 'CXC VIGENTES' y 'CXC VENCIDAS' existan y contengan datos válidos.")
+
+
+# Interfaz de usuario de Streamlit
+st.sidebar.title("Configuración de Reporte")
+uploaded_file = st.sidebar.file_uploader("Sube tu archivo Excel de Deudas", type=["xls", "xlsx"])
+
+if uploaded_file:
+    run(uploaded_file)
+else:
+    st.info("Por favor, sube un archivo Excel para generar el reporte de Cuentas por Cobrar.")
