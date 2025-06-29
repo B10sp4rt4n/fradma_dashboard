@@ -72,7 +72,7 @@ def run(archivo):
             
         # Convertir saldo a numérico
         df_cxc['saldo'] = pd.to_numeric(
-            df_cxc['saldo'].astype(str).str.replace('[^\d.]', '', regex=True),
+            df_cxc['saldo'].astype(str).str.replace(r'[^\d.]', '', regex=True),
             errors='coerce'
         )
         
