@@ -11,7 +11,6 @@ def normalizar_columnas(df):
         col_str = str(col).lower().strip().replace(" ", "_")
         col_str = unidecode(col_str)
         
-        # Manejar nombres duplicados
         if col_str in contador:
             contador[col_str] += 1
             col_str = f"{col_str}_{contador[col_str]}"
@@ -24,7 +23,7 @@ def normalizar_columnas(df):
 
 def run(archivo):
     if not archivo.name.endswith(('.xls', '.xlsx')):
-        st.error("❌ Solo se aceptan archivos Excel para el KPI CxC.")
+        st.error("❌ Solo se aceptan archivos Excel para el reporte de deudas.")
         return
 
     try:
@@ -32,25 +31,25 @@ def run(archivo):
         hojas = xls.sheet_names
         
         if "CXC VIGENTES" not in hojas or "CXC VENCIDAS" not in hojas:
-            st.error("❌ No se encontraron ambas hojas necesarias: 'CXC VIGENTES' y 'CXC VENCIDAS'.")
+            st.error("❌ No se encontraron las hojas requeridas: 'CXC VIGENTES' y 'CXC VENCIDAS'.")
             return
 
         st.info("✅ Fuente: Hojas 'CXC VIGENTES' y 'CXC VENCIDAS'")
 
-        # Leer y normalizar cada hoja
+        # Leer y normalizar datos
         df_vigentes = pd.read_excel(xls, sheet_name='CXC VIGENTES')
         df_vencidas = pd.read_excel(xls, sheet_name='CXC VENCIDAS')
         
         df_vigentes = normalizar_columnas(df_vigentes)
         df_vencidas = normalizar_columnas(df_vencidas)
         
-        # Renombrar columnas clave para unificación
+        # Renombrar columnas clave
         column_rename = {
-            'razon_social': 'cliente',
+            'razon_social': 'deudor',
             'linea_de_negocio': 'linea_negocio',
             'vendedor': 'vendedor',
-            'saldo': 'saldo',
-            'saldo_usd': 'saldo',  # Priorizar saldo USD si existe
+            'saldo': 'saldo_adeudado',
+            'saldo_usd': 'saldo_adeudado',
             'estatus': 'estatus'
         }
         
@@ -59,201 +58,159 @@ def run(archivo):
                 if original in df.columns:
                     df.rename(columns={original: nuevo}, inplace=True)
         
-        # Agregar columna de origen
+        # Agregar origen
         df_vigentes['origen'] = 'VIGENTE'
         df_vencidas['origen'] = 'VENCIDA'
         
         # Unificar columnas
         common_cols = list(set(df_vigentes.columns) & set(df_vencidas.columns))
-        df_cxc = pd.concat([
+        df_deudas = pd.concat([
             df_vigentes[common_cols], 
             df_vencidas[common_cols]
         ], ignore_index=True)
         
-        # Eliminar columnas completamente vacías
-        df_cxc = df_cxc.dropna(axis=1, how='all')
+        # Limpieza
+        df_deudas = df_deudas.dropna(axis=1, how='all')
         
-        # Verificar duplicados en nombres de columnas
-        duplicados = df_cxc.columns[df_cxc.columns.duplicated()]
+        # Manejar duplicados
+        duplicados = df_deudas.columns[df_deudas.columns.duplicated()]
         if not duplicados.empty:
-            st.warning(f"⚠️ Columnas duplicadas detectadas: {', '.join(duplicados)}")
-            # Conservar solo la primera ocurrencia de cada columna
-            df_cxc = df_cxc.loc[:, ~df_cxc.columns.duplicated(keep='first')]
+            df_deudas = df_deudas.loc[:, ~df_deudas.columns.duplicated(keep='first')]
 
-        # Validar columna de saldo
-        if 'saldo' not in df_cxc.columns:
-            st.error("❌ No existe columna 'saldo' en las hojas CxC. No se puede continuar.")
-            st.write("Columnas disponibles:", df_cxc.columns.tolist())
+        # Validar columna clave
+        if 'saldo_adeudado' not in df_deudas.columns:
+            st.error("❌ No existe columna de saldo en los datos.")
             return
             
-        # Asegurarnos que estamos trabajando con una Serie
-        if isinstance(df_cxc['saldo'], pd.DataFrame):
-            st.error("❌ Error: Múltiples columnas 'saldo' detectadas.")
-            st.write("Por favor revise su archivo para columnas duplicadas.")
-            return
-            
-        # Convertir saldo a numérico
-        saldo_serie = df_cxc['saldo'].astype(str)
+        # Convertir saldo
+        saldo_serie = df_deudas['saldo_adeudado'].astype(str)
         saldo_limpio = saldo_serie.str.replace(r'[^\d.]', '', regex=True)
-        df_cxc['saldo'] = pd.to_numeric(saldo_limpio, errors='coerce')
+        df_deudas['saldo_adeudado'] = pd.to_numeric(saldo_limpio, errors='coerce').fillna(0)
+
+        # ---------------------------------------------------------------------
+        # NUEVO ENFOQUE: REPORTE DE DEUDAS A FRADMA
+        # ---------------------------------------------------------------------
+        st.header("📊 Reporte de Deudas a Fradma")
         
-        # Manejar valores no numéricos
-        if df_cxc['saldo'].isna().any():
-            n_errors = df_cxc['saldo'].isna().sum()
-            st.warning(f"⚠️ {n_errors} valores no numéricos en 'saldo' convertidos a 0")
-            df_cxc['saldo'] = df_cxc['saldo'].fillna(0)
-
-        # Crear estatus unificado
-        if 'estatus' in df_cxc.columns:
-            # Manejar valores nulos en estatus
-            df_cxc['estatus'] = df_cxc['estatus'].fillna('DESCONOCIDO')
-            df_cxc['estatus'] = df_cxc['estatus'].str.upper()
-        else:
-            df_cxc['estatus'] = df_cxc['origen']
-
-        st.header("📊 KPI Avanzado de Cuentas por Cobrar")
-
-        # KPIs principales en columnas
-        col1, col2, col3 = st.columns(3)
-        total_cxc = df_cxc['saldo'].sum()
-        col1.metric("Total CxC", f"${total_cxc:,.2f}")
+        # KPIs principales
+        total_adeudado = df_deudas['saldo_adeudado'].sum()
+        col1, col2 = st.columns(2)
+        col1.metric("Total Adeudado a Fradma", f"${total_adeudado:,.2f}")
         
-        # Calcular montos por estatus - CON MANEJO DE NULOS
+        # Calcular vencimientos
         try:
-            # Usar na=False para evitar problemas con valores nulos
-            mask_vigente = df_cxc['estatus'].str.contains('VIGENTE', na=False)
-            mask_vencida = df_cxc['estatus'].str.contains('VENCID', na=False)
-            
-            vigente = df_cxc[mask_vigente]['saldo'].sum()
-            vencida = df_cxc[mask_vencida]['saldo'].sum()
-            
-            col2.metric("CxC Vigente", f"${vigente:,.2f}", 
-                       delta=f"{(vigente/total_cxc*100 if total_cxc else 0):.1f}%")
-            
-            col3.metric("CxC Vencida", f"${vencida:,.2f}", 
-                       delta=f"{(vencida/total_cxc*100 if total_cxc else 0):.1f}%",
+            mask_vencida = df_deudas['estatus'].str.contains('VENCID', na=False)
+            vencida = df_deudas[mask_vencida]['saldo_adeudado'].sum()
+            col2.metric("Deuda Vencida", f"${vencida:,.2f}", 
+                       delta=f"{(vencida/total_adeudado*100):.1f}%",
                        delta_color="inverse")
-        except Exception as e:
-            st.error(f"❌ Error al calcular saldos por estatus: {str(e)}")
-            vigente, vencida = 0, 0
+        except:
+            vencida = 0
 
-        # KPIs secundarios
-        clientes = df_cxc['cliente'].nunique() if 'cliente' in df_cxc.columns else 0
-        vendedores = df_cxc['vendedor'].nunique() if 'vendedor' in df_cxc.columns else 0
-        lineas = df_cxc['linea_negocio'].nunique() if 'linea_negocio' in df_cxc.columns else 0
-        
-        col4, col5, col6 = st.columns(3)
-        col4.metric("👥 Clientes Únicos", clientes)
-        col5.metric("👤 Vendedores Únicos", vendedores)
-        col6.metric("📦 Líneas de Producto", lineas)
+        # Top 5 deudores
+        st.subheader("🔝 Principales Deudores")
+        if 'deudor' in df_deudas.columns:
+            top_deudores = df_deudas.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
+            st.dataframe(top_deudores.reset_index().rename(
+                columns={'deudor': 'Deudor', 'saldo_adeudado': 'Monto Adeudado ($)'}
+            ).style.format({'Monto Adeudado ($)': '${:,.2f}'}))
+            
+            # Gráfico de concentración
+            st.bar_chart(top_deudores)
+        else:
+            st.warning("ℹ️ No se encontró información de deudores")
 
-        # Análisis de antigüedad de saldos
-        st.subheader("📅 Análisis de Antigüedad")
-        if 'vencimiento' in df_cxc.columns:
+        # Análisis de riesgo por antigüedad
+        st.subheader("📅 Perfil de Riesgo por Antigüedad")
+        if 'vencimiento' in df_deudas.columns:
             try:
-                df_cxc['fecha_vencimiento'] = pd.to_datetime(
-                    df_cxc['vencimiento'], errors='coerce', dayfirst=True
+                df_deudas['fecha_vencimiento'] = pd.to_datetime(
+                    df_deudas['vencimiento'], errors='coerce', dayfirst=True
                 )
                 
-                # Filtrar solo valores válidos de fecha
-                df_valid_dates = df_cxc.dropna(subset=['fecha_vencimiento'])
-                
                 hoy = pd.Timestamp.today()
-                df_valid_dates['dias_vencido'] = (hoy - df_valid_dates['fecha_vencimiento']).dt.days
+                df_deudas['dias_vencido'] = (hoy - df_deudas['fecha_vencimiento']).dt.days
                 
-                # Clasificar por rangos
+                # Clasificación de riesgo
                 bins = [-np.inf, 0, 30, 60, 90, 180, np.inf]
-                labels = ['Por vencer', '1-30 días', '31-60 días', '61-90 días', '91-180 días', '>180 días']
-                df_valid_dates['antigüedad'] = pd.cut(
-                    df_valid_dates['dias_vencido'], 
+                labels = ['0. Bajo (Por vencer)', 
+                         '1. Moderado (1-30 días)', 
+                         '2. Medio (31-60 días)', 
+                         '3. Alto (61-90 días)', 
+                         '4. Crítico (91-180 días)', 
+                         '5. Irrecuperable (>180 días)']
+                
+                df_deudas['nivel_riesgo'] = pd.cut(
+                    df_deudas['dias_vencido'], 
                     bins=bins, 
                     labels=labels
                 )
                 
-                # Resumen de antigüedad
-                antiguedad_df = df_valid_dates.groupby('antigüedad')['saldo'].sum().reset_index()
-                antiguedad_df['porcentaje'] = (antiguedad_df['saldo'] / total_cxc) * 100
-                st.dataframe(antiguedad_df.style.format({
-                    'saldo': '${:,.2f}',
+                # Resumen de riesgo
+                riesgo_df = df_deudas.groupby('nivel_riesgo')['saldo_adeudado'].sum().reset_index()
+                riesgo_df['porcentaje'] = (riesgo_df['saldo_adeudado'] / total_adeudado) * 100
+                
+                # Ordenar por nivel de riesgo
+                riesgo_df = riesgo_df.sort_values('nivel_riesgo')
+                
+                st.dataframe(riesgo_df.style.format({
+                    'saldo_adeudado': '${:,.2f}',
                     'porcentaje': '{:.1f}%'
                 }))
                 
-                # Gráfico de barras
-                st.bar_chart(antiguedad_df.set_index('antigüedad')['saldo'])
+                # Gráfico de riesgo
+                st.bar_chart(riesgo_df.set_index('nivel_riesgo')['saldo_adeudado'])
                 
             except Exception as e:
                 st.error(f"❌ Error en análisis de vencimientos: {str(e)}")
         else:
-            st.warning("ℹ️ No se encontró columna 'vencimiento' para análisis de antigüedad")
+            st.warning("ℹ️ No se encontró columna de vencimiento")
 
-        # Sección de tablas dinámicas
-        st.subheader("🔍 Desglose Detallado")
-        
-        # Selector de dimensión
-        dimension = st.selectbox("Seleccionar dimensión para análisis", 
-                                ["Vendedor", "Cliente", "Línea de Producto"],
-                                index=0)
-        
-        dim_map = {
-            "Vendedor": "vendedor",
-            "Cliente": "cliente",
-            "Línea de Producto": "linea_negocio"
-        }
-        
-        if dim_map[dimension] in df_cxc.columns:
-            pivot = df_cxc.pivot_table(
-                index=dim_map[dimension],
-                values='saldo',
-                aggfunc=['sum', 'count']
-            ).reset_index()
+        # Desglose detallado por deudor
+        st.subheader("🔍 Detalle Completo por Deudor")
+        if 'deudor' in df_deudas.columns:
+            # Seleccionar deudor
+            deudores = df_deudas['deudor'].unique().tolist()
+            selected_deudor = st.selectbox("Seleccionar Deudor", deudores)
             
-            pivot.columns = [dimension, 'Saldo Total', 'Documentos']
-            pivot['Porcentaje'] = (pivot['Saldo Total'] / total_cxc) * 100
+            # Filtrar datos
+            deudor_df = df_deudas[df_deudas['deudor'] == selected_deudor]
+            total_deudor = deudor_df['saldo_adeudado'].sum()
             
-            st.dataframe(
-                pivot.sort_values('Saldo Total', ascending=False)
-                .style.format({
-                    'Saldo Total': '${:,.2f}',
-                    'Porcentaje': '{:.1f}%'
-                })
-            )
+            st.metric(f"Total Adeudado por {selected_deudor}", f"${total_deudor:,.2f}")
             
-            # Top 10
-            st.subheader(f"🔝 Top 10 {dimension} con Mayor Saldo")
-            top10 = pivot.nlargest(10, 'Saldo Total')
-            st.bar_chart(top10.set_index(dimension)['Saldo Total'])
+            # Mostrar documentos pendientes
+            st.write("**Documentos pendientes:**")
+            cols = ['fecha_vencimiento', 'saldo_adeudado', 'estatus', 'dias_vencido'] 
+            cols = [c for c in cols if c in deudor_df.columns]
+            st.dataframe(deudor_df[cols].sort_values('fecha_vencimiento', ascending=False))
+            
+            # Histórico de pagos (si existe)
+            if 'fecha_pago' in df_deudas.columns:
+                st.write("**Histórico de pagos:**")
+                pagos = deudor_df[deudor_df['saldo_adeudado'] <= 0]  # Suponiendo que pagos son negativos
+                if not pagos.empty:
+                    st.dataframe(pagos[['fecha_pago', 'monto_pagado']])
+                else:
+                    st.info("ℹ️ No se encontraron registros de pagos recientes")
         else:
-            st.warning(f"⚠️ No existe columna para {dimension} en los datos")
+            st.warning("ℹ️ No se encontró información de deudores")
 
-        # Análisis de concentración
-        st.subheader("📈 Análisis de Concentración")
-        if 'cliente' in df_cxc.columns:
-            client_pivot = df_cxc.pivot_table(
-                index='cliente',
-                values='saldo',
-                aggfunc='sum'
-            ).reset_index().sort_values('saldo', ascending=False)
-            
-            client_pivot['cumsum'] = client_pivot['saldo'].cumsum()
-            client_pivot['cum_pct'] = (client_pivot['cumsum'] / total_cxc) * 100
-            
-            # Calcular Pareto (80/20)
-            pareto_index = np.argmax(client_pivot['cum_pct'] >= 80)
-            pareto_clients = client_pivot.iloc[:pareto_index+1]
-            
-            st.info(f"🔍 Principales {len(pareto_clients)} clientes concentran el 80% del saldo")
-            st.dataframe(
-                pareto_clients.style.format({
-                    'saldo': '${:,.2f}',
-                    'cum_pct': '{:.1f}%'
-                })
-            )
-            
-            # Gráfico de Pareto
-            st.area_chart(pareto_clients.set_index('cliente')[['cum_pct']])
+        # Resumen ejecutivo
+        st.subheader("📝 Resumen Ejecutivo")
+        st.write(f"Fradma tiene **${total_adeudado:,.2f}** en deudas pendientes de cobro, distribuidos en:")
+        
+        if 'deudor' in df_deudas.columns:
+            num_deudores = df_deudas['deudor'].nunique()
+            st.write(f"- **{num_deudores} deudores diferentes**")
+        
+        if 'dias_vencido' in df_deudas.columns:
+            deuda_vencida = df_deudas[df_deudas['dias_vencido'] > 0]['saldo_adeudado'].sum()
+            st.write(f"- **${deuda_vencida:,.2f} en deuda vencida**")
+        
+        st.write("Este reporte muestra la exposición financiera actual de Fradma con sus deudores.")
 
     except Exception as e:
         st.error(f"❌ Error crítico: {str(e)}")
-        st.error("⚠️ Por favor revise que el archivo tenga la estructura correcta")
         import traceback
-        st.error(traceback.format_exc())  # Mostrar traza completa para diagnóstico
+        st.error(traceback.format_exc())
