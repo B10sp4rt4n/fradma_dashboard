@@ -43,19 +43,32 @@ def run(archivo):
         df_vigentes = normalizar_columnas(df_vigentes)
         df_vencidas = normalizar_columnas(df_vencidas)
         
-        # Renombrar columnas clave
-        column_rename = {
-            'razon_social': 'deudor',
-            'linea_de_negocio': 'linea_negocio',
-            'vendedor': 'vendedor',
-            'saldo': 'saldo_adeudado',
-            'saldo_usd': 'saldo_adeudado',
-            'estatus': 'estatus'
-        }
-        
+        # Renombrar columnas clave - PRIORIZAR COLUMNA F (CLIENTE)
         for df in [df_vigentes, df_vencidas]:
+            # 1. Priorizar columna 'cliente' (columna F)
+            if 'cliente' in df.columns:
+                df.rename(columns={'cliente': 'deudor'}, inplace=True)
+                
+                # Si también existe 'razon_social', eliminarla
+                if 'razon_social' in df.columns:
+                    df.drop(columns=['razon_social'], inplace=True)
+                    
+            # 2. Si no existe 'cliente', usar 'razon_social' como respaldo
+            elif 'razon_social' in df.columns:
+                df.rename(columns={'razon_social': 'deudor'}, inplace=True)
+            
+            # Renombrar otras columnas importantes
+            column_rename = {
+                'linea_de_negocio': 'linea_negocio',
+                'vendedor': 'vendedor',
+                'saldo': 'saldo_adeudado',
+                'saldo_usd': 'saldo_adeudado',
+                'estatus': 'estatus',
+                'vencimiento': 'fecha_vencimiento'
+            }
+            
             for original, nuevo in column_rename.items():
-                if original in df.columns:
+                if original in df.columns and nuevo not in df.columns:
                     df.rename(columns={original: nuevo}, inplace=True)
         
         # Agregar origen
@@ -80,6 +93,13 @@ def run(archivo):
         # Validar columna clave
         if 'saldo_adeudado' not in df_deudas.columns:
             st.error("❌ No existe columna de saldo en los datos.")
+            st.write("Columnas disponibles:", df_deudas.columns.tolist())
+            return
+            
+        # Validar columna de deudor
+        if 'deudor' not in df_deudas.columns:
+            st.error("❌ No se encontró columna para identificar deudores.")
+            st.write("Se esperaba 'cliente' o 'razon_social' en los encabezados")
             return
             
         # Convertir saldo
@@ -88,7 +108,7 @@ def run(archivo):
         df_deudas['saldo_adeudado'] = pd.to_numeric(saldo_limpio, errors='coerce').fillna(0)
 
         # ---------------------------------------------------------------------
-        # NUEVO ENFOQUE: REPORTE DE DEUDAS A FRADMA
+        # REPORTE DE DEUDAS A FRADMA (USANDO COLUMNA CORRECTA)
         # ---------------------------------------------------------------------
         st.header("📊 Reporte de Deudas a Fradma")
         
@@ -107,25 +127,22 @@ def run(archivo):
         except:
             vencida = 0
 
-        # Top 5 deudores
-        st.subheader("🔝 Principales Deudores")
-        if 'deudor' in df_deudas.columns:
-            top_deudores = df_deudas.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
-            st.dataframe(top_deudores.reset_index().rename(
-                columns={'deudor': 'Deudor', 'saldo_adeudado': 'Monto Adeudado ($)'}
-            ).style.format({'Monto Adeudado ($)': '${:,.2f}'}))
-            
-            # Gráfico de concentración
-            st.bar_chart(top_deudores)
-        else:
-            st.warning("ℹ️ No se encontró información de deudores")
+        # Top 5 deudores (USANDO COLUMNA F - CLIENTE)
+        st.subheader("🔝 Principales Deudores (Columna Cliente)")
+        top_deudores = df_deudas.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
+        st.dataframe(top_deudores.reset_index().rename(
+            columns={'deudor': 'Cliente (Col F)', 'saldo_adeudado': 'Monto Adeudado ($)'}
+        ).style.format({'Monto Adeudado ($)': '${:,.2f}'}))
+        
+        # Gráfico de concentración
+        st.bar_chart(top_deudores)
 
         # Análisis de riesgo por antigüedad
         st.subheader("📅 Perfil de Riesgo por Antigüedad")
-        if 'vencimiento' in df_deudas.columns:
+        if 'fecha_vencimiento' in df_deudas.columns:
             try:
                 df_deudas['fecha_vencimiento'] = pd.to_datetime(
-                    df_deudas['vencimiento'], errors='coerce', dayfirst=True
+                    df_deudas['fecha_vencimiento'], errors='coerce', dayfirst=True
                 )
                 
                 hoy = pd.Timestamp.today()
@@ -166,49 +183,33 @@ def run(archivo):
         else:
             st.warning("ℹ️ No se encontró columna de vencimiento")
 
-        # Desglose detallado por deudor
-        st.subheader("🔍 Detalle Completo por Deudor")
-        if 'deudor' in df_deudas.columns:
-            # Seleccionar deudor
-            deudores = df_deudas['deudor'].unique().tolist()
-            selected_deudor = st.selectbox("Seleccionar Deudor", deudores)
-            
-            # Filtrar datos
-            deudor_df = df_deudas[df_deudas['deudor'] == selected_deudor]
-            total_deudor = deudor_df['saldo_adeudado'].sum()
-            
-            st.metric(f"Total Adeudado por {selected_deudor}", f"${total_deudor:,.2f}")
-            
-            # Mostrar documentos pendientes
-            st.write("**Documentos pendientes:**")
-            cols = ['fecha_vencimiento', 'saldo_adeudado', 'estatus', 'dias_vencido'] 
-            cols = [c for c in cols if c in deudor_df.columns]
-            st.dataframe(deudor_df[cols].sort_values('fecha_vencimiento', ascending=False))
-            
-            # Histórico de pagos (si existe)
-            if 'fecha_pago' in df_deudas.columns:
-                st.write("**Histórico de pagos:**")
-                pagos = deudor_df[deudor_df['saldo_adeudado'] <= 0]  # Suponiendo que pagos son negativos
-                if not pagos.empty:
-                    st.dataframe(pagos[['fecha_pago', 'monto_pagado']])
-                else:
-                    st.info("ℹ️ No se encontraron registros de pagos recientes")
-        else:
-            st.warning("ℹ️ No se encontró información de deudores")
+        # Desglose detallado por deudor (CLIENTE - COLUMNA F)
+        st.subheader("🔍 Detalle Completo por Deudor (Columna Cliente)")
+        deudores = df_deudas['deudor'].unique().tolist()
+        selected_deudor = st.selectbox("Seleccionar Deudor", deudores)
+        
+        # Filtrar datos
+        deudor_df = df_deudas[df_deudas['deudor'] == selected_deudor]
+        total_deudor = deudor_df['saldo_adeudado'].sum()
+        
+        st.metric(f"Total Adeudado por {selected_deudor}", f"${total_deudor:,.2f}")
+        
+        # Mostrar documentos pendientes
+        st.write("**Documentos pendientes:**")
+        cols = ['fecha_vencimiento', 'saldo_adeudado', 'estatus', 'dias_vencido'] 
+        cols = [c for c in cols if c in deudor_df.columns]
+        st.dataframe(deudor_df[cols].sort_values('fecha_vencimiento', ascending=False))
 
         # Resumen ejecutivo
         st.subheader("📝 Resumen Ejecutivo")
-        st.write(f"Fradma tiene **${total_adeudado:,.2f}** en deudas pendientes de cobro, distribuidos en:")
-        
-        if 'deudor' in df_deudas.columns:
-            num_deudores = df_deudas['deudor'].nunique()
-            st.write(f"- **{num_deudores} deudores diferentes**")
+        st.write(f"Fradma tiene **${total_adeudado:,.2f}** en deudas pendientes de cobro")
+        st.write(f"El principal deudor es **{top_deudores.index[0]}** con **${top_deudores.iloc[0]:,.2f}**")
         
         if 'dias_vencido' in df_deudas.columns:
             deuda_vencida = df_deudas[df_deudas['dias_vencido'] > 0]['saldo_adeudado'].sum()
             st.write(f"- **${deuda_vencida:,.2f} en deuda vencida**")
         
-        st.write("Este reporte muestra la exposición financiera actual de Fradma con sus deudores.")
+        st.write("Este reporte se basa en la columna 'Cliente' (F) para identificar deudores.")
 
     except Exception as e:
         st.error(f"❌ Error crítico: {str(e)}")
