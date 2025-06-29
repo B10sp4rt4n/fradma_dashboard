@@ -4,12 +4,20 @@ import numpy as np
 from unidecode import unidecode
 from datetime import datetime
 
-# 🛠️ FUNCIÓN: Normalización de encabezados (consistente con app.py)
 def normalizar_columnas(df):
     nuevas_columnas = []
+    contador = {}
     for col in df.columns:
         col_str = str(col).lower().strip().replace(" ", "_")
         col_str = unidecode(col_str)
+        
+        # Manejar nombres duplicados
+        if col_str in contador:
+            contador[col_str] += 1
+            col_str = f"{col_str}_{contador[col_str]}"
+        else:
+            contador[col_str] = 1
+            
         nuevas_columnas.append(col_str)
     df.columns = nuevas_columnas
     return df
@@ -64,17 +72,30 @@ def run(archivo):
         
         # Eliminar columnas completamente vacías
         df_cxc = df_cxc.dropna(axis=1, how='all')
+        
+        # Verificar duplicados en nombres de columnas
+        duplicados = df_cxc.columns[df_cxc.columns.duplicated()]
+        if not duplicados.empty:
+            st.warning(f"⚠️ Columnas duplicadas detectadas: {', '.join(duplicados)}")
+            # Conservar solo la primera ocurrencia de cada columna
+            df_cxc = df_cxc.loc[:, ~df_cxc.columns.duplicated(keep='first')]
 
         # Validar columna de saldo
         if 'saldo' not in df_cxc.columns:
             st.error("❌ No existe columna 'saldo' en las hojas CxC. No se puede continuar.")
+            st.write("Columnas disponibles:", df_cxc.columns.tolist())
             return
             
-        # Convertir saldo a numérico
-        df_cxc['saldo'] = pd.to_numeric(
-            df_cxc['saldo'].astype(str).str.replace(r'[^\d.]', '', regex=True),
-            errors='coerce'
-        )
+        # Asegurarnos que estamos trabajando con una Serie
+        if isinstance(df_cxc['saldo'], pd.DataFrame):
+            st.error("❌ Error: Múltiples columnas 'saldo' detectadas.")
+            st.write("Por favor revise su archivo para columnas duplicadas.")
+            return
+            
+        # Convertir saldo a numérico (SOLUCIÓN AL ERROR ORIGINAL)
+        saldo_serie = df_cxc['saldo'].astype(str)
+        saldo_limpio = saldo_serie.str.replace(r'[^\d.]', '', regex=True)
+        df_cxc['saldo'] = pd.to_numeric(saldo_limpio, errors='coerce')
         
         # Manejar valores no numéricos
         if df_cxc['saldo'].isna().any():
@@ -82,6 +103,7 @@ def run(archivo):
             st.warning(f"⚠️ {n_errors} valores no numéricos en 'saldo' convertidos a 0")
             df_cxc['saldo'] = df_cxc['saldo'].fillna(0)
 
+        # ... (el resto del código permanece igual) ...
         # Crear estatus unificado
         if 'estatus' in df_cxc.columns:
             df_cxc['estatus'] = df_cxc['estatus'].str.upper()
@@ -220,3 +242,4 @@ def run(archivo):
 
     except Exception as e:
         st.error(f"❌ Error crítico: {str(e)}")
+        st.error("⚠️ Por favor revise que el archivo tenga la estructura correcta")
