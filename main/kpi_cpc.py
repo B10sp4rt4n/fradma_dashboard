@@ -92,7 +92,7 @@ def run(archivo):
             st.write("Por favor revise su archivo para columnas duplicadas.")
             return
             
-        # Convertir saldo a numérico (SOLUCIÓN AL ERROR ORIGINAL)
+        # Convertir saldo a numérico
         saldo_serie = df_cxc['saldo'].astype(str)
         saldo_limpio = saldo_serie.str.replace(r'[^\d.]', '', regex=True)
         df_cxc['saldo'] = pd.to_numeric(saldo_limpio, errors='coerce')
@@ -103,9 +103,10 @@ def run(archivo):
             st.warning(f"⚠️ {n_errors} valores no numéricos en 'saldo' convertidos a 0")
             df_cxc['saldo'] = df_cxc['saldo'].fillna(0)
 
-        # ... (el resto del código permanece igual) ...
         # Crear estatus unificado
         if 'estatus' in df_cxc.columns:
+            # Manejar valores nulos en estatus
+            df_cxc['estatus'] = df_cxc['estatus'].fillna('DESCONOCIDO')
             df_cxc['estatus'] = df_cxc['estatus'].str.upper()
         else:
             df_cxc['estatus'] = df_cxc['origen']
@@ -117,16 +118,24 @@ def run(archivo):
         total_cxc = df_cxc['saldo'].sum()
         col1.metric("Total CxC", f"${total_cxc:,.2f}")
         
-        # Calcular montos por estatus
-        vigente = df_cxc[df_cxc['estatus'].str.contains('VIGENTE')]['saldo'].sum()
-        vencida = df_cxc[df_cxc['estatus'].str.contains('VENCID')]['saldo'].sum()
-        
-        col2.metric("CxC Vigente", f"${vigente:,.2f}", 
-                   delta=f"{(vigente/total_cxc*100 if total_cxc else 0):.1f}%")
-        
-        col3.metric("CxC Vencida", f"${vencida:,.2f}", 
-                   delta=f"{(vencida/total_cxc*100 if total_cxc else 0):.1f}%",
-                   delta_color="inverse")
+        # Calcular montos por estatus - CON MANEJO DE NULOS
+        try:
+            # Usar na=False para evitar problemas con valores nulos
+            mask_vigente = df_cxc['estatus'].str.contains('VIGENTE', na=False)
+            mask_vencida = df_cxc['estatus'].str.contains('VENCID', na=False)
+            
+            vigente = df_cxc[mask_vigente]['saldo'].sum()
+            vencida = df_cxc[mask_vencida]['saldo'].sum()
+            
+            col2.metric("CxC Vigente", f"${vigente:,.2f}", 
+                       delta=f"{(vigente/total_cxc*100 if total_cxc else 0):.1f}%")
+            
+            col3.metric("CxC Vencida", f"${vencida:,.2f}", 
+                       delta=f"{(vencida/total_cxc*100 if total_cxc else 0):.1f}%",
+                       delta_color="inverse")
+        except Exception as e:
+            st.error(f"❌ Error al calcular saldos por estatus: {str(e)}")
+            vigente, vencida = 0, 0
 
         # KPIs secundarios
         clientes = df_cxc['cliente'].nunique() if 'cliente' in df_cxc.columns else 0
@@ -146,20 +155,23 @@ def run(archivo):
                     df_cxc['vencimiento'], errors='coerce', dayfirst=True
                 )
                 
+                # Filtrar solo valores válidos de fecha
+                df_valid_dates = df_cxc.dropna(subset=['fecha_vencimiento'])
+                
                 hoy = pd.Timestamp.today()
-                df_cxc['dias_vencido'] = (hoy - df_cxc['fecha_vencimiento']).dt.days
+                df_valid_dates['dias_vencido'] = (hoy - df_valid_dates['fecha_vencimiento']).dt.days
                 
                 # Clasificar por rangos
                 bins = [-np.inf, 0, 30, 60, 90, 180, np.inf]
                 labels = ['Por vencer', '1-30 días', '31-60 días', '61-90 días', '91-180 días', '>180 días']
-                df_cxc['antigüedad'] = pd.cut(
-                    df_cxc['dias_vencido'], 
+                df_valid_dates['antigüedad'] = pd.cut(
+                    df_valid_dates['dias_vencido'], 
                     bins=bins, 
                     labels=labels
                 )
                 
                 # Resumen de antigüedad
-                antiguedad_df = df_cxc.groupby('antigüedad')['saldo'].sum().reset_index()
+                antiguedad_df = df_valid_dates.groupby('antigüedad')['saldo'].sum().reset_index()
                 antiguedad_df['porcentaje'] = (antiguedad_df['saldo'] / total_cxc) * 100
                 st.dataframe(antiguedad_df.style.format({
                     'saldo': '${:,.2f}',
@@ -243,3 +255,5 @@ def run(archivo):
     except Exception as e:
         st.error(f"❌ Error crítico: {str(e)}")
         st.error("⚠️ Por favor revise que el archivo tenga la estructura correcta")
+        import traceback
+        st.error(traceback.format_exc())  # Mostrar traza completa para diagnóstico
