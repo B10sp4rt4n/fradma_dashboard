@@ -5,6 +5,7 @@ from unidecode import unidecode
 from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import os # Importamos os para manejar rutas de archivo
 
 def normalizar_columnas(df):
     """
@@ -28,26 +29,27 @@ def normalizar_columnas(df):
     df.columns = nuevas_columnas
     return df
 
-def run(archivo):
+def run_local_files(): # La función ya no necesita argumentos de archivo
     """
-    Función principal para procesar el archivo Excel y generar el dashboard.
+    Función principal para procesar archivos Excel locales y generar el dashboard.
     """
-    if not archivo.name.endswith(('.xls', '.xlsx')):
-        st.error("❌ Solo se aceptan archivos Excel para el reporte de deudas.")
-        return
+    # Definimos las rutas de los archivos locales
+    # ASUMIMOS que los archivos están en la misma carpeta que este script.
+    # Si están en otra ubicación, DEBES CAMBIAR estas rutas.
+    file_vigentes = "CXC VIGENTES.xlsx"
+    file_vencidas = "CXC VENCIDAS.xlsx"
+
+    # Verificar si los archivos existen antes de intentar leerlos
+    if not os.path.exists(file_vigentes) or not os.path.exists(file_vencidas):
+        st.error(f"❌ Error: No se encontraron los archivos '{file_vigentes}' y/o '{file_vencidas}' en la ubicación esperada. Asegúrate de que estén en la misma carpeta que este script.")
+        st.stop() # Detener la ejecución si los archivos no existen
 
     try:
-        xls = pd.ExcelFile(archivo)
-        hojas = xls.sheet_names
-        
-        if "CXC VIGENTES" not in hojas or "CXC VENCIDAS" not in hojas:
-            st.error("❌ No se encontraron las hojas requeridas: 'CXC VIGENTES' y 'CXC VENCIDAS'.")
-            return
+        st.info(f"✅ Fuente: Procesando archivos locales '{file_vigentes}' y '{file_vencidas}'.")
 
-        st.info("✅ Fuente: Hojas 'CXC VIGENTES' y 'CXC VENCIDAS' detectadas.")
-
-        df_vigentes = pd.read_excel(xls, "CXC VIGENTES")
-        df_vencidas = pd.read_excel(xls, "CXC VENCIDAS")
+        # Leer los DataFrames directamente desde las rutas locales
+        df_vigentes = pd.read_excel(file_vigentes)
+        df_vencidas = pd.read_excel(file_vencidas)
 
         # Normalizar columnas de ambos DataFrames
         df_vigentes = normalizar_columnas(df_vigentes)
@@ -57,7 +59,6 @@ def run(archivo):
         df_deudas = pd.concat([df_vigentes, df_vencidas], ignore_index=True)
 
         # Convertir tipos de datos
-        # Intentar con múltiples formatos de fecha si es necesario
         df_deudas['fecha_vencimiento'] = pd.to_datetime(df_deudas['fecha_vencimiento'], errors='coerce')
         df_deudas['saldo_adeudado'] = pd.to_numeric(df_deudas['saldo_adeudado'], errors='coerce')
         
@@ -163,9 +164,6 @@ def run(archivo):
                     # Histórico de pagos (si existe la columna y hay lógica)
                     if 'fecha_pago' in df_deudas.columns and 'monto_pagado' in df_deudas.columns:
                         st.write("**Histórico de pagos:**")
-                        # Asumiendo que 'monto_pagado' está en la misma fila que el 'deudor'
-                        # y 'saldo_adeudado' se actualiza a 0 o negativo tras el pago.
-                        # Esta lógica puede necesitar ajuste según tus datos reales.
                         pagos = deudor_df[deudor_df['monto_pagado'] > 0] 
                         if not pagos.empty:
                             st.dataframe(pagos[['fecha_pago', 'monto_pagado']].style.format({'monto_pagado': "${:,.2f}"}))
@@ -181,9 +179,6 @@ def run(archivo):
         # --- NUEVA SECCIÓN: Gráficos de Deuda por Agente (AÑADIDA) ---
         st.subheader("📈 Deuda Pendiente por Agente")
         
-        # Asegúrate de que la columna 'agente' exista después de normalizar
-        # IMPORTANTE: Asegúrate de que tus archivos Excel tengan una columna para el agente (ej. 'Agente', 'Vendedor')
-        # que será normalizada por la función 'normalizar_columnas'.
         if 'agente' in df_deudas.columns:
             deuda_por_agente = df_deudas.groupby('agente')['saldo_adeudado'].sum().sort_values(ascending=False)
             
@@ -193,12 +188,11 @@ def run(archivo):
                 ax_agente.set_title('Deuda Total Pendiente por Agente')
                 ax_agente.set_xlabel('Agente')
                 ax_agente.set_ylabel('Saldo Adeudado')
-                ax_agente.ticklabel_format(style='plain', axis='y') # Evitar notación científica en el eje Y
-                plt.xticks(rotation=45, ha='right') # Inclinar etiquetas para mejor lectura
-                plt.tight_layout() # Ajustar el layout para evitar cortes
+                ax_agente.ticklabel_format(style='plain', axis='y') 
+                plt.xticks(rotation=45, ha='right') 
+                plt.tight_layout() 
                 st.pyplot(fig_agente)
 
-                # También puedes mostrar una tabla con los datos por agente
                 st.write("Detalle de Deuda por Agente:")
                 st.dataframe(deuda_por_agente.reset_index().style.format({
                     'saldo_adeudado': "${:,.2f}"
@@ -229,15 +223,14 @@ def run(archivo):
         st.write("Este informe proporciona una visión general de las cuentas por cobrar, ayudando a identificar áreas de enfoque para la gestión de la cartera.")
 
     except Exception as e:
-        st.error(f"Se produjo un error al procesar el archivo: {e}")
-        st.info("Asegúrate de que el archivo Excel no esté abierto y que las hojas 'CXC VIGENTES' y 'CXC VENCIDAS' existan y contengan datos válidos.")
+        st.error(f"Se produjo un error al procesar los archivos: {e}")
+        st.info("Asegúrate de que los archivos Excel no estén abiertos y que las hojas 'CXC VIGENTES' y 'CXC VENCIDAS' existan y contengan datos válidos.")
 
 
-# Interfaz de usuario de Streamlit
+# Ejecutar la aplicación sin el uploader
+# NOTA IMPORTANTE: Los archivos 'CXC VIGENTES.xlsx' y 'CXC VENCIDAS.xlsx'
+# DEBEN ESTAR EN LA MISMA CARPETA QUE ESTE SCRIPT kpi_cpc.py
 st.sidebar.title("Configuración de Reporte")
-uploaded_file = st.sidebar.file_uploader("Sube tu archivo Excel de Deudas", type=["xls", "xlsx"])
+st.sidebar.info("Este reporte procesa automáticamente los archivos 'CXC VIGENTES.xlsx' y 'CXC VENCIDAS.xlsx' ubicados en la misma carpeta del script.")
 
-if uploaded_file:
-    run(uploaded_file)
-else:
-    st.info("Por favor, sube un archivo Excel para generar el reporte de Cuentas por Cobrar.")
+run_local_files()
