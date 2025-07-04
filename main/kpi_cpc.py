@@ -115,6 +115,8 @@ def run(archivo):
         st.header("📊 Reporte de Deudas a Fradma")
         
         # KPIs principales
+        except Exception as e:
+            st.error(f"⚠️ Error inesperado: {str(e)}")
 # [REMOVIDO POR REUBICACIÓN] =========================================================
         # 1. KPI: Tasa de concentración Top 3
         top_3 = top_deudores.head(3).sum()
