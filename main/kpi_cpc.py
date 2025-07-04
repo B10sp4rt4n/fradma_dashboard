@@ -115,7 +115,7 @@ def run(archivo):
         st.header("📊 Reporte de Deudas a Fradma")
         
         # KPIs principales
-        # NUEVOS KPIs ADICIONALES =========================================================
+# [REMOVIDO POR REUBICACIÓN] =========================================================
         # 1. KPI: Tasa de concentración Top 3
         top_3 = top_deudores.head(3).sum()
         concentracion_3 = (top_3 / total_adeudado) * 100
@@ -166,6 +166,34 @@ def run(archivo):
         
         # Gráfico de concentración
         st.bar_chart(top_deudores)
+        # NUEVOS KPIs ADICIONALES =========================================================
+        # 1. KPI: Tasa de concentración Top 3
+        top_3 = top_deudores.head(3).sum()
+        concentracion_3 = (top_3 / total_adeudado) * 100
+        st.metric("Concentración Top 3 Deudores", f"{concentracion_3:.1f}%", help="Porcentaje de deuda total concentrada en los 3 principales deudores")
+
+        # 2. KPI: Alerta de deuda vencida crítica > 180 días
+        if 'dias_vencido' in df_deudas.columns:
+            deuda_critica = df_deudas[df_deudas['dias_vencido'] > 180]['saldo_adeudado'].sum()
+            if deuda_critica > 0:
+                st.warning(f"⚠️ Deuda crítica (vencida > 180 días): ${deuda_critica:,.2f}")
+
+        # 3. KPI: Tasa de vencimiento por agente
+        if 'vendedor' in df_deudas.columns and 'dias_vencido' in df_deudas.columns:
+            df_agente_riesgo = df_deudas.copy()
+            df_agente_riesgo['vencido'] = df_agente_riesgo['dias_vencido'] > 0
+            resumen_riesgo = df_agente_riesgo.groupby('vendedor').agg(
+                total_adeudado=('saldo_adeudado', 'sum'),
+                vencido=('vencido', 'sum')
+            )
+            resumen_riesgo['tasa_riesgo'] = (resumen_riesgo['vencido'] / resumen_riesgo['total_adeudado']) * 100
+            resumen_riesgo = resumen_riesgo.sort_values('tasa_riesgo', ascending=False)
+            st.subheader("📈 Tasa de Deuda Vencida por Agente")
+            st.dataframe(resumen_riesgo.style.format({
+                'total_adeudado': '${:,.2f}',
+                'tasa_riesgo': '{:.1f}%'
+            }))
+
 
         # Análisis de riesgo por antigüedad
         st.subheader("📅 Perfil de Riesgo por Antigüedad")
