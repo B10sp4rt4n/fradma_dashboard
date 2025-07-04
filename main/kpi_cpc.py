@@ -121,19 +121,14 @@ def run(archivo):
         
         # Calcular vencimientos
         try:
-        # Calcular deuda vencida basada en antigüedad (> 90 días)
-        try:
-            if 'dias_vencido' not in df_deudas.columns and 'fecha_vencimiento' in df_deudas.columns:
-                hoy = pd.Timestamp.today()
-                df_deudas['dias_vencido'] = (hoy - pd.to_datetime(df_deudas['fecha_vencimiento'], errors='coerce')).dt.days
-
-            vencida = df_deudas[df_deudas['dias_vencido'] > 90]['saldo_adeudado'].sum()
-            col2.metric("Deuda Vencida (>90 días)", f"${vencida:,.2f}", 
-                         delta=f"{(vencida/total_adeudado*100):.1f}%",
-                         delta_color="inverse")
-        except Exception as e:
-            st.warning(f"No se pudo calcular la deuda vencida: {str(e)}")
+            mask_vencida = df_deudas['estatus'].str.contains('VENCID', na=False)
+            vencida = df_deudas[mask_vencida]['saldo_adeudado'].sum()
+            col2.metric("Deuda Vencida", f"${vencida:,.2f}", 
+                       delta=f"{(vencida/total_adeudado*100):.1f}%",
+                       delta_color="inverse")
+        except:
             vencida = 0
+
         # Top 5 deudores (USANDO COLUMNA F - CLIENTE)
         st.subheader("🔝 Principales Deudores (Columna Cliente)")
         top_deudores = df_deudas.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
