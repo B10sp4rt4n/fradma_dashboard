@@ -124,7 +124,7 @@ def run(df):
                 step=1
             )
 
-        df_filtered = df_filtered.applymap(lambda x: x if min_importe <= x <= max_importe else np.nan)
+        df_filtered = df_filtered.map(lambda x: x if min_importe <= x <= max_importe else np.nan)
         total_por_linea = df_filtered.sum(axis=0)
         top_lineas = total_por_linea.sort_values(ascending=False).head(top_n).index.tolist()
         df_filtered = df_filtered[top_lineas]
@@ -182,7 +182,8 @@ def run(df):
                 st.warning(f"⚠️ Error calculando crecimiento YoY: {e}")
                 annot_data = df_filtered.applymap(lambda x: format_currency(x))
         else:
-            annot_data = df_filtered.applymap(lambda x: format_currency(x))
+            # DESPUÉS
+            annot_data = df_filtered.map(lambda x: format_currency(x))
 
         fig, ax = plt.subplots(figsize=(max(10, len(top_lineas)*1.5), max(5, len(df_filtered.index)*0.6)))
         sns.heatmap(

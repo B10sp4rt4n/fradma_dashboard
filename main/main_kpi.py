@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 
+# main/main_kpi.py necesita usar algo de kpi_engine.py
+from . import kpi_engine # El punto '.' significa "desde esta misma carpeta"
+
 def run():
     st.title("📈 KPIs Generales")
 
@@ -10,6 +13,29 @@ def run():
         return
 
     df = st.session_state["df"].copy()
+
+    # ===================== INICIO DE LA CORRECCIÓN =====================
+
+    # CORRECCIÓN 1: Convertir columnas con tipos de datos mixtos a string.
+    # Esto soluciona los errores 'pyarrow.lib.ArrowTypeError' y 'pyarrow.lib.ArrowInvalid'
+    # que ocurren cuando Streamlit intenta mostrar un DataFrame con columnas
+    # que contienen, por ejemplo, tanto números como texto (ej. 'zona', 'r-factura').
+    # También previene el 'TypeError' al intentar ordenar columnas con tipos incompatibles.
+    for col in df.select_dtypes(include=['object']).columns:
+        try:
+            df[col] = df[col].astype(str)
+        except Exception as e:
+            st.warning(f"No se pudo convertir la columna '{col}' a string: {e}")
+
+    # CORRECCIÓN 2: Asegurar que la columna de fecha sea de tipo datetime.
+    # Se usa 'errors="coerce"' para convertir fechas no válidas en NaT (Not a Time).
+    if "fecha" in df.columns:
+        df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
+    else:
+        st.error("El DataFrame debe contener una columna 'fecha'.")
+        return
+
+    # ===================== FIN DE LA CORRECCIÓN =======================
 
     # Asegurar compatibilidad: valor_usd = ventas_usd_con_iva o ventas_usd
     if "valor_usd" not in df.columns:
@@ -24,17 +50,11 @@ def run():
 
     # Aplicar tipo de cambio promedio por año
     tipos_cambio = {
-        2018: 19.24,
-        2019: 19.26,
-        2020: 21.49,
-        2021: 20.28,
-        2022: 20.13,
-        2023: 17.81,
-        2024: 18.325,
-        2025: 20.00
+        2018: 19.24, 2019: 19.26, 2020: 21.49, 2021: 20.28,
+        2022: 20.13, 2023: 17.81, 2024: 18.325, 2025: 20.00
     }
 
-    df["anio"] = pd.to_datetime(df["fecha"], errors="coerce").dt.year
+    df["anio"] = df["fecha"].dt.year
     df["tipo_cambio"] = df["anio"].map(tipos_cambio).fillna(17.0)
     df["valor_mn_calc"] = df["valor_usd"] * df["tipo_cambio"]
 
@@ -61,7 +81,8 @@ def run():
             break
 
     if columna_agente:
-        df["agente"] = df[columna_agente].astype(str)  # Estandarizar
+        # La conversión a string ya se hizo arriba, pero lo reforzamos aquí
+        df["agente"] = df[columna_agente].astype(str)
         agentes = sorted(df["agente"].dropna().unique())
         agente_sel = st.selectbox("Selecciona Ejecutivo:", ["Todos"] + agentes)
 
@@ -71,11 +92,12 @@ def run():
         st.warning("⚠️ No se encontró columna 'agente', 'vendedor' o 'ejecutivo'.")
 
     # Filtro adicional: línea de producto
-    linea_producto = df["linea_producto"].dropna().unique() if "linea_producto" in df.columns else []
-    linea_sel = st.selectbox("Selecciona Línea de Producto (opcional):", ["Todas"] + list(linea_producto)) if len(linea_producto) > 0 else "Todas"
+    if "linea_producto" in df.columns:
+        linea_producto = sorted(df["linea_producto"].dropna().unique())
+        linea_sel = st.selectbox("Selecciona Línea de Producto (opcional):", ["Todas"] + list(linea_producto))
 
-    if linea_sel != "Todas" and "linea_producto" in df.columns:
-        df = df[df["linea_producto"] == linea_sel]
+        if linea_sel != "Todas":
+            df = df[df["linea_producto"] == linea_sel]
 
     # KPIs filtrados
     st.subheader("KPIs Filtrados")
@@ -104,9 +126,6 @@ def run():
         )
 
         ranking.insert(0, "Ranking", range(1, len(ranking) + 1))
-        ranking["total_usd"] = ranking["total_usd"].round(0)
-        ranking["total_mn"] = ranking["total_mn"].round(0)
-
         st.dataframe(ranking.style.format({
             "total_usd": "${:,.0f}",
             "total_mn": "${:,.0f}",
@@ -123,60 +142,29 @@ def run():
         )
 
         df_chart = df[["agente", "anio", "valor_usd"]].dropna()
-
-        # Agrupación base para todos los gráficos
-        resumen_agente = (
-            df_chart.groupby(["agente", "anio"])
-            .agg(
-                total_ventas=("valor_usd", "sum"),
-                operaciones=("valor_usd", "count")
-            )
-            .reset_index()
-        )
-        resumen_agente["ventas_moneda"] = resumen_agente["total_ventas"].apply(lambda x: f"${x:,.2f}")
+        resumen_agente = df_chart.groupby("agente").agg(total_ventas=("valor_usd", "sum")).reset_index()
 
         if chart_type == "Pie Chart":
-            pie_data = (
-                resumen_agente.groupby("agente")
-                .agg(
-                    total_ventas=("total_ventas", "sum"),
-                    operaciones=("operaciones", "sum")
-                )
-                .reset_index()
-            )
-            pie_data["ventas_moneda"] = pie_data["total_ventas"].apply(lambda x: f"${x:,.2f}")
-
-            chart = alt.Chart(pie_data).mark_arc(innerRadius=50).encode(
-                theta="total_ventas:Q",
-                color="agente:N",
-                tooltip=["agente:N", "ventas_moneda:N", "operaciones:Q"]
+            chart = alt.Chart(resumen_agente).mark_arc(innerRadius=50).encode(
+                theta=alt.Theta(field="total_ventas", type="quantitative"),
+                color=alt.Color(field="agente", type="nominal"),
+                tooltip=["agente", alt.Tooltip("total_ventas", title="Ventas (USD)", format="$,.2f")]
             ).properties(title="Participación de Vendedores (USD)")
 
         elif chart_type == "Barras Horizontales":
-            bar_data = (
-                resumen_agente.groupby("agente")
-                .agg(
-                    total_ventas=("total_ventas", "sum"),
-                    operaciones=("operaciones", "sum")
-                )
-                .reset_index()
-                .sort_values("total_ventas", ascending=True)
-            )
-            bar_data["ventas_moneda"] = bar_data["total_ventas"].apply(lambda x: f"${x:,.2f}")
-
-            chart = alt.Chart(bar_data).mark_bar().encode(
-                x="total_ventas:Q",
-                y=alt.Y("agente:N", sort="-x"),
-                tooltip=["agente:N", "ventas_moneda:N", "operaciones:Q"]
+            chart = alt.Chart(resumen_agente).mark_bar().encode(
+                x=alt.X("total_ventas:Q", title="Ventas Totales (USD)"),
+                y=alt.Y("agente:N", sort="-x", title="Vendedor"),
+                tooltip=["agente", alt.Tooltip("total_ventas", title="Ventas (USD)", format="$,.2f")]
             ).properties(title="Ventas Totales por Vendedor (USD)")
 
         elif chart_type == "Ventas por Año":
-            resumen_agente["anio"] = resumen_agente["anio"].astype(str)
-            chart = alt.Chart(resumen_agente).mark_bar().encode(
+            resumen_anio_agente = df_chart.groupby(["anio", "agente"]).agg(total_ventas=("valor_usd", "sum")).reset_index()
+            chart = alt.Chart(resumen_anio_agente).mark_bar().encode(
                 x=alt.X("anio:N", title="Año"),
-                y=alt.Y("total_ventas:Q", title="Ventas USD"),
+                y=alt.Y("total_ventas:Q", title="Ventas (USD)"),
                 color="agente:N",
-                tooltip=["anio:N", "agente:N", "ventas_moneda:N", "operaciones:Q"]
+                tooltip=["anio", "agente", alt.Tooltip("total_ventas", title="Ventas (USD)", format="$,.2f")]
             ).properties(title="Ventas por Vendedor en el Tiempo")
 
         st.altair_chart(chart, use_container_width=True)
