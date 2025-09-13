@@ -1,0 +1,67 @@
+[33m3c2e6a1[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mV2-4-CodeAdjust[m[33m)[m Fusionando cambios de main con V2_4_codeAdjust
+[33m9e237d4[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m ✅ Corrige KPI de deuda vencida (>90 días reales)
+[33m001f9d4[m ✅ KPI actualizado: deuda vencida ahora se calcula con días > 90 en lugar de texto 'VENCID'
+[33m8dc6072[m ✅ Fix SyntaxError: limpiado except inválido en kpi_cpc.py
+[33m0c5c1a5[m ✅ Fix SyntaxError: limpiado except inválido en kpi_cpc.py
+[33m5137026[m ✅ Corrección de ubicación para KPIs adicionales en kpi_cpc_v2.py
+[33m49c4bb6[m ✅ Corrección de ubicación para KPIs adicionales en kpi_cpc_v2.py
+[33m845bf06[m ✅ Corrección de ubicación para KPIs adicionales en kpi_cpc_v2.py
+[33m04b5bd1[m 🆕 Agrega KPIs de concentración, deuda crítica y tasa de riesgo por agente
+[33md1e37ed[m Revisión gráficos y reenfoque dashboardo con semaforos
+[33m45c4ad5[m Rollback por errores diversos
+[33mb9a991b[m Se agrega KPI de CxC de agentes, corregido por Gemini, revisado para no sbur mas tablas paralelas
+[33mb1131c2[m Se agrega KPI de CxC de agentes, corregido por Gemini
+[33m956c3ef[m Se agrega KPI de CxC de agentes
+[33m3edc85e[m Reenfoque KPIS relacion de clientes deudores corregida
+[33mda5ad83[m Reenfoque KPIS relacion de clientes deudores corregida
+[33m4865b70[m Revisión errores KPIS CPC
+[33m47113d2[m Integración del KPI Cartera CxC con manejo de errores y pivots por vendedor, cliente y línea de negocio, manejo errores
+[33mc37f017[m Integración del KPI Cartera CxC con manejo de errores y pivots por vendedor, cliente y línea de negocio
+[33m5319985[m Integración del KPI Cartera CxC con manejo de errores y pivots por vendedor, cliente y línea de negocio
+[33m43f8316[m ✅ Fix import kpi_cpc desde carpeta main para despliegue Streamlit Cloud
+[33md88e63f[m 🔗 Vinculación de módulo KPI CxC: Opción 2 - Envío de archivo original desde app.py
+[33mee85434[m ✅ KPIs: Tooltips en Pie, Barras y Ventas Año con formato moneda y operaciones
+[33ma55ea81[m 🎨 Ajuste: formato moneda y conteo de operaciones por agente
+[33m95457e5[m docs: Creación de README para heatmap_ventas.py con descripción de funcionalidades y lógica YoY
+[33m0e7eb7c[m feat: Ajuste de contraste dinámico en anotaciones del heatmap_ventas.py
+[33md2873e7[m feat: Ajuste de contraste dinámico en anotaciones del heatmap_ventas.py
+[33mde6e3dd[m refactor: Implementación de crecimiento YoY por tipo de periodo en heatmap_ventas.py
+[33m4f2f184[m refactor: Ordenamiento secuencial y formato visual en heatmap_ventas.py
+[33m6f47d3e[m refactor: Secuencialidad y ajustes visuales en heatmap_ventas.py
+[33m5ee3276[m feat: Integración de secuencialidad, formato de moneda, tamaño de fuente y color verde al heatmap_ventas.py
+[33m2ff91d2[m ✅ Heatmap: Fix crítico - Implementación de period_id absoluto basado en fechas reales para orden cronológico y cálculo correcto de crecimiento
+[33me357c05[m ✅ Heatmap Final: Implementación de period_id absoluto para orden cronológico real + cálculo correcto de crecimiento + visualización mantenida + nuevas ventas
+[33m4fb9421[m ✅ Heatmap Final: Integración de period_id para orden cronológico real + cálculo de crecimiento correcto + nuevas ventas + visualización mantenida
+[33m8a4ec23[m ✅ Heatmap Final Limpio: Mapeo robusto, nuevas ventas en verde, listado de líneas nuevas y orden cronológico de periodos
+[33m2f8e610[m ✅ Heatmap Ventas: Color verde en celdas NEW y listado de líneas de negocio con nuevas ventas
+[33m7bbadec[m ✅ Mejora: Heatmap con indicador visual de nuevas ventas (foco) y reemplazo de inf% por texto NEW en verde fosforescente
+[33m714146d[m ✅ Mejora: Heatmap Ventas con mapeador robusto y detección visual de nuevas ventas (foco prendido)
+[33md9d57c8[m 🛠️ Mejora: Implementación de mapeador robusto de columnas en Heatmap Ventas y documentación del mapeo
+[33md18e289[m ✅ Mejora: Mapeador robusto para detectar columna línea e importe en Heatmap
+[33m238bfd4[m ✅ Fusión: Heatmap ahora modularizado y listo para app.py
+[33m6ac9152[m 🐛 Fix: Eliminado bloque de carga de archivo local en heatmap_ventas.py para evitar conflictos con app.py
+[33mc9a4644[m Fusión lectura X AGENTE y Hoja1 Contpaq en heatmap
+[33m1ade31e[m ✅ Fix: Detección flexible de columna de importe (valor_usd, valor_mn, importe) y validación previa al pivot
+[33mbb80d15[m ✅ Fix: Validación robusta de columnas antes del pivot_table y detección flexible de columna Línea de Negocio / Producto
+[33mffc46c5[m ✅ Fix: Corrección definitiva para asegurar existencia de columna 'periodo' antes de pivot y detección flexible de columna Línea de Negocio o Producto
+[33m99e0850[m ✅ Fix: Detección robusta de columna Línea de Negocio o Producto usando unidecode (incluyendo typo 'Línea Prodcucto')
+[33m2569b3c[m ✅ Actualización: Agregada detección flexible de columna incluyendo 'Línea Prodcucto' en módulo heatmap_ventas
+[33m5a3c6bb[m ✨ Ajuste final: Integración de Heatmap Ventas y detección flexible de columna incluyendo 'Línea Prodcucto' como variante
+[33m9dd63f8[m ✨ Integración definitiva del módulo Heatmap Ventas con detección flexible de columnas Línea de Negocio y Producto
+[33m32280bb[m Merge branch 'main' of https://github.com/B10sp4rt4n/fradma_dashboard
+[33m614e0f0[m ✨ Integración final del módulo Heatmap Ventas con detección flexible de columna Línea de Negocio o Producto
+[33mec31781[m Update requirements.txt
+[33mdb1ecff[m 🔧 Ajustes en módulos KPI y Comparativo
+[33m34764a8[m ✨ Integración del módulo Heatmap Ventas como opción final en app. Limpieza de menú, detección flexible de columna.
+[33mc23d191[m ✅ Fix:  Regrese a status anterior
+[33m8fe26b5[m ✅ Fix: evitar error en selección de años duplicados en comparativo
+[33m0d1ab32[m 🧪 Cambio de prueba para forzar deploy en Streamlit
+[33mb4411f9[m 🧪 Cambio de prueba para forzar deploy en Streamlit
+[33m98c1570[m ✅ Fix: corrección segura en cálculo de % Variación (main_comparativo)
+[33m47b7dcd[m 📝 Guardado temporal antes de pull --rebase
+[33mbe0329d[m 🔧 Actualización de análisis CxC y CXP en main_kpi
+[33mece1cce[m Update requirements.txt
+[33m13c0293[m Update requirements.txt
+[33m63bae88[m Subiendo todo el proyecto Fradma Dashboard
+[33m46de4bd[m Subiendo app.py individualmente
+[33mb7f31e0[m Initial commit
